@@ -228,6 +228,9 @@ def main(
     eval_datasets: dict[str, list[dict]] = {}
     for label, path in [("Base", base_results), ("SFT", sft_results), ("GRPO", grpo_results)]:
         if path:
+            if not Path(path).exists():
+                typer.echo(f"WARNING: {label} results file not found: {path} — skipping")
+                continue
             typer.echo(f"Loading {label} results from {path} …")
             eval_datasets[label] = _read_jsonl(path)
 
@@ -265,16 +268,22 @@ def main(
 
     # ── Training curves ─────────────────────────────────────────────────────
     if sft_log:
-        typer.echo(f"Loading SFT training log from {sft_log} …")
-        sft_rows = _read_jsonl(sft_log)
-        if sft_rows:
-            _training_curve_sft(sft_rows, out_dir / "sft_training_curve.png")
+        if not Path(sft_log).exists():
+            typer.echo(f"WARNING: SFT log not found: {sft_log} — skipping")
+        else:
+            typer.echo(f"Loading SFT training log from {sft_log} …")
+            sft_rows = _read_jsonl(sft_log)
+            if sft_rows:
+                _training_curve_sft(sft_rows, out_dir / "sft_training_curve.png")
 
     if grpo_log:
-        typer.echo(f"Loading GRPO training log from {grpo_log} …")
-        grpo_rows = _read_jsonl(grpo_log)
-        if grpo_rows:
-            _training_curves_grpo(grpo_rows, out_dir / "grpo_training_curves.png")
+        if not Path(grpo_log).exists():
+            typer.echo(f"WARNING: GRPO log not found: {grpo_log} — skipping")
+        else:
+            typer.echo(f"Loading GRPO training log from {grpo_log} …")
+            grpo_rows = _read_jsonl(grpo_log)
+            if grpo_rows:
+                _training_curves_grpo(grpo_rows, out_dir / "grpo_training_curves.png")
 
     typer.echo(f"\nAll outputs saved to {out_dir}/")
 
