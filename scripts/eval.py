@@ -37,18 +37,22 @@ def _load_model_and_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(
         adapter_path if adapter_path else base_model,
         trust_remote_code=True,
+        padding_side="left",
     )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    # Use device_map="auto" to spread across all available GPUs automatically
-    multi_gpu = torch.cuda.device_count() > 1
+    # device_map="auto" spreads layers across GPUs but breaks merge_and_unload()
+    # so only use it for the base model (no adapter). With an adapter, load on
+    # a single GPU, merge, then the merged model stays on that GPU.
+    multi_gpu = torch.cuda.device_count() > 1 and adapter_path is None
     load_kwargs: dict = {"trust_remote_code": True, "dtype": torch.float16}
     if multi_gpu:
         load_kwargs["device_map"] = "auto"
 
     model = AutoModelForCausalLM.from_pretrained(base_model, **load_kwargs)
     if adapter_path:
+        model = model.to(device)
         model = PeftModel.from_pretrained(model, adapter_path)
         model = model.merge_and_unload()
 
