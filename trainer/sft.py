@@ -136,6 +136,11 @@ def run_sft(args: SFTArgs) -> None:
     _set_seed(args.seed)
     device = _get_device()
 
+    # Create output dir early so log file can be written during training
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    if args.train_log_path:
+        Path(args.train_log_path).parent.mkdir(parents=True, exist_ok=True)
+
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token

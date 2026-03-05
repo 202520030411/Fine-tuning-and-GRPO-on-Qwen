@@ -226,6 +226,11 @@ def run_grpo(args: GRPOArgs) -> None:
     _set_seed(args.seed)
     device = _get_device()
 
+    # Create output dir early so log file can be written during training
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    if args.train_log_path:
+        Path(args.train_log_path).parent.mkdir(parents=True, exist_ok=True)
+
     # ── Tokenizer ─────────────────────────────────────────────────────────────
     tok_path = args.ref_model_path if args.ref_model_path else args.model_name_or_path
     tokenizer = AutoTokenizer.from_pretrained(tok_path, trust_remote_code=True)
