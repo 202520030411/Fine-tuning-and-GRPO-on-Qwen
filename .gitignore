@@ -1,0 +1,31 @@
+# HuggingFace cache (model weights, datasets — re-downloaded on demand)
+.hf/
+
+# Trained model checkpoints
+model/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs (optional — comment out if you want to commit logs)
+*.log
