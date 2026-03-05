@@ -8,3 +8,4 @@ tqdm>=4.66.0
 sentencepiece>=0.2.0
 safetensors>=0.4.3
 matplotlib>=3.8.0
+trl>=0.12.0
