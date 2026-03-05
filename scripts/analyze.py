@@ -206,6 +206,36 @@ def _write_error_samples(datasets: dict[str, list[dict]], out_path: Path, n: int
     typer.echo(f"  Saved {out_path}")
 
 
+# ── Log readers ───────────────────────────────────────────────────────────────
+
+def _read_grpo_log(path: str) -> list[dict]:
+    """
+    Read GRPO training log in either format:
+    - Custom JSONL (one dict per line with keys: step, reward, pg_loss, kl, accuracy)
+    - TRL trainer_state.json (JSON with a top-level "log_history" list)
+    """
+    p = Path(path)
+    if p.suffix == ".json":
+        with p.open() as f:
+            state = json.load(f)
+        raw = state.get("log_history", [])
+        rows = []
+        for entry in raw:
+            if "step" not in entry:
+                continue
+            row: dict = {"step": entry["step"]}
+            # TRL logs 'rewards/mean' or 'reward' depending on version
+            row["reward"] = entry.get("reward", entry.get("rewards/mean", 0.0))
+            row["pg_loss"] = entry.get("loss", 0.0)
+            row["kl"] = entry.get("kl", 0.0)
+            # TRL doesn't log accuracy; default to 0 so the plot is still drawn
+            row["accuracy"] = entry.get("accuracy", 0.0)
+            rows.append(row)
+        return rows
+    # Fall back to custom JSONL format
+    return _read_jsonl(path)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 @app.command()
@@ -281,7 +311,7 @@ def main(
             typer.echo(f"WARNING: GRPO log not found: {grpo_log} — skipping")
         else:
             typer.echo(f"Loading GRPO training log from {grpo_log} …")
-            grpo_rows = _read_jsonl(grpo_log)
+            grpo_rows = _read_grpo_log(grpo_log)
             if grpo_rows:
                 _training_curves_grpo(grpo_rows, out_dir / "grpo_training_curves.png")
 
