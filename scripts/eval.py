@@ -41,17 +41,20 @@ def _load_model_and_tokenizer(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model,
-        torch_dtype=torch.float32,
-        trust_remote_code=True,
-    )
+    # Use device_map="auto" to spread across all available GPUs automatically
+    multi_gpu = torch.cuda.device_count() > 1
+    load_kwargs: dict = {"trust_remote_code": True, "dtype": torch.float16}
+    if multi_gpu:
+        load_kwargs["device_map"] = "auto"
+
+    model = AutoModelForCausalLM.from_pretrained(base_model, **load_kwargs)
     if adapter_path:
         model = PeftModel.from_pretrained(model, adapter_path)
         model = model.merge_and_unload()
 
     model.eval()
-    model.to(device)
+    if not multi_gpu:
+        model.to(device)
     return model, tokenizer
 
 
@@ -81,8 +84,9 @@ def main(
     ),
     batch_size: int = typer.Option(1, help="Generation batch size."),
 ) -> None:
+    n_gpus = torch.cuda.device_count()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    typer.echo(f"Device: {device}")
+    typer.echo(f"Device: {device}  ({n_gpus} GPU(s) detected)")
 
     typer.echo(f"Loading model: {base_model}" + (f" + adapter: {adapter_path}" if adapter_path else ""))
     model, tokenizer = _load_model_and_tokenizer(base_model, adapter_path, device)
@@ -100,13 +104,15 @@ def main(
         batch = examples[i : i + batch_size]
         prompts = [ex["prompt"] for ex in batch]
 
+        # With device_map="auto" inputs go to the model's first device
+        input_device = next(model.parameters()).device
         enc = tokenizer(
             prompts,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=512,
-        ).to(device)
+        ).to(input_device)
 
         gen_kwargs: dict = dict(
             max_new_tokens=max_new_tokens,
