@@ -44,6 +44,9 @@ def main(
     seed: int = typer.Option(0, help="Random seed."),
     save_merged: bool = typer.Option(False, help="If set, merge LoRA and save a full model."),
     train_log_path: Optional[str] = typer.Option(None, help="JSONL file to write per-step loss metrics."),
+    fp16: bool = typer.Option(False, help="Enable fp16 mixed precision (T4/V100)."),
+    bf16: bool = typer.Option(False, help="Enable bf16 mixed precision (A100/H100)."),
+    gradient_checkpointing: bool = typer.Option(False, help="Enable gradient checkpointing to save VRAM."),
 ) -> None:
     args = SFTArgs(
         model_name_or_path=model_name_or_path,
@@ -63,6 +66,9 @@ def main(
         seed=seed,
         save_merged=save_merged,
         train_log_path=train_log_path,
+        fp16=fp16,
+        bf16=bf16,
+        gradient_checkpointing=gradient_checkpointing,
     )
     run_sft(args)
 

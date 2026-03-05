@@ -34,6 +34,9 @@ class SFTArgs:
     grad_clip: float = 1.0
     log_every: int = 10
     save_merged: bool = False
+    fp16: bool = False                  # mixed-precision (fp16) — saves ~40% VRAM on T4
+    bf16: bool = False                  # mixed-precision (bf16) — better numerics on A100/H100
+    gradient_checkpointing: bool = False  # trade compute for memory; ~30% slower
     # Path to write per-step training metrics as JSONL (None = don't write)
     train_log_path: Optional[str] = None
 
@@ -137,9 +140,23 @@ def run_sft(args: SFTArgs) -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path)
+    # Choose dtype for model weights
+    if args.bf16 and torch.cuda.is_bf16_supported():
+        load_dtype = torch.bfloat16
+    elif args.fp16:
+        load_dtype = torch.float16
+    else:
+        load_dtype = torch.float32
+
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name_or_path,
+        torch_dtype=load_dtype,
+    )
     model.config.pad_token_id = tokenizer.pad_token_id
     model.to(device)
+
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
 
     target_modules = _infer_lora_targets(model)
     lora_cfg = LoraConfig(
@@ -152,6 +169,11 @@ def run_sft(args: SFTArgs) -> None:
     )
     model = get_peft_model(model, lora_cfg)
     model.train()
+
+    # AMP scaler — only used for fp16 (bf16 doesn't need it)
+    use_amp = (args.fp16 or args.bf16) and device.type == "cuda"
+    amp_dtype = torch.bfloat16 if args.bf16 else torch.float16
+    scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
 
     train_ds = PromptTargetJsonl(args.train_path)
     train_loader = DataLoader(
@@ -175,17 +197,20 @@ def run_sft(args: SFTArgs) -> None:
             batch = {k: v.to(device) for k, v in batch.items()}
             if int((batch["labels"] != -100).sum().item()) == 0:
                 continue
-            out = model(**batch)
-            loss = out.loss
-            (loss / args.grad_accum).backward()
+            with torch.cuda.amp.autocast(enabled=use_amp, dtype=amp_dtype):
+                out = model(**batch)
+                loss = out.loss
+            scaler.scale(loss / args.grad_accum).backward()
             micro_step += 1
             running_loss += float(loss.detach().cpu())
             running_count += 1
 
             if micro_step % args.grad_accum == 0:
                 if args.grad_clip and args.grad_clip > 0:
+                    scaler.unscale_(opt)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-                opt.step()
+                scaler.step(opt)
+                scaler.update()
                 opt.zero_grad(set_to_none=True)
                 opt_step += 1
 
