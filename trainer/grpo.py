@@ -83,7 +83,7 @@ def _load_base(model_name_or_path: str, ref_model_path: Optional[str]) -> torch.
     """
     base = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
-        torch_dtype=torch.float32,
+        torch_dtype=torch.float16,
         trust_remote_code=True,
     )
     if ref_model_path:
