@@ -236,25 +236,141 @@ def _read_grpo_log(path: str) -> list[dict]:
     return _read_jsonl(path)
 
 
+# ── SVAMP / MMLU helpers ──────────────────────────────────────────────────────
+
+def _cross_dataset_accuracy(
+    gsm8k_sets: dict[str, list[dict]],
+    svamp_sets: dict[str, list[dict]],
+    out_path: Path,
+) -> None:
+    """Grouped bar chart: GSM8K vs SVAMP accuracy per model."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    models = list({**gsm8k_sets, **svamp_sets}.keys())
+    gsm8k_acc  = [sum(r.get("correct", 0) > 0 for r in gsm8k_sets.get(m, [])) / max(1, len(gsm8k_sets.get(m, []))) for m in models]
+    svamp_acc  = [sum(r.get("correct", 0) > 0 for r in svamp_sets.get(m, [])) / max(1, len(svamp_sets.get(m, []))) for m in models]
+
+    x = np.arange(len(models))
+    w = 0.35
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(x - w / 2, [v * 100 for v in gsm8k_acc], w, label="GSM8K", color="steelblue")
+    ax.bar(x + w / 2, [v * 100 for v in svamp_acc],  w, label="SVAMP",  color="mediumseagreen")
+    ax.set_xticks(x)
+    ax.set_xticklabels(models)
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_title("Math Accuracy: GSM8K vs SVAMP", fontsize=13, fontweight="bold")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.4)
+    for bar in ax.patches:
+        h = bar.get_height()
+        ax.annotate(f"{h:.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
+                    xytext=(0, 3), textcoords="offset points", ha="center", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    typer.echo(f"  Saved {out_path}")
+
+
+def _mmlu_forgetting_chart(mmlu_sets: dict[str, list[dict]], out_path: Path) -> None:
+    """Bar chart showing MMLU accuracy per subject per model (forgetting check)."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # Collect subjects
+    subjects: list[str] = []
+    for rows in mmlu_sets.values():
+        for r in rows:
+            s = r.get("subject", "unknown")
+            if s not in subjects:
+                subjects.append(s)
+
+    models = list(mmlu_sets.keys())
+    x = np.arange(len(subjects))
+    w = 0.8 / max(len(models), 1)
+    colors = ["steelblue", "darkorange", "mediumseagreen"]
+
+    fig, ax = plt.subplots(figsize=(max(8, len(subjects) * 3), 5))
+    for i, (model, color) in enumerate(zip(models, colors)):
+        rows = mmlu_sets[model]
+        accs = []
+        for subj in subjects:
+            subj_rows = [r for r in rows if r.get("subject") == subj]
+            acc = sum(r.get("correct", 0) for r in subj_rows) / max(1, len(subj_rows))
+            accs.append(acc * 100)
+        offset = (i - len(models) / 2 + 0.5) * w
+        bars = ax.bar(x + offset, accs, w, label=model, color=color)
+        for bar in bars:
+            h = bar.get_height()
+            ax.annotate(f"{h:.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
+                        xytext=(0, 3), textcoords="offset points", ha="center", fontsize=8)
+
+    short_subjects = [s.replace("_", " ").replace("high school", "HS").replace("elementary", "Elem") for s in subjects]
+    ax.set_xticks(x)
+    ax.set_xticklabels(short_subjects, rotation=15, ha="right")
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_title("MMLU Accuracy by Subject (Forgetting Check)", fontsize=13, fontweight="bold")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    typer.echo(f"  Saved {out_path}")
+
+
+def _mmlu_summary_table(mmlu_sets: dict[str, list[dict]]) -> None:
+    subjects: list[str] = []
+    for rows in mmlu_sets.values():
+        for r in rows:
+            s = r.get("subject", "unknown")
+            if s not in subjects:
+                subjects.append(s)
+
+    header = f"{'Model':<8}  " + "  ".join(f"{s[:22]:<22}" for s in subjects) + "  Overall"
+    typer.echo("\n" + "=" * len(header))
+    typer.echo("MMLU Results")
+    typer.echo("=" * len(header))
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for model, rows in mmlu_sets.items():
+        parts = []
+        total_c, total_n = 0, 0
+        for subj in subjects:
+            sr = [r for r in rows if r.get("subject") == subj]
+            c = sum(r.get("correct", 0) for r in sr)
+            n = len(sr)
+            total_c += c; total_n += n
+            parts.append(f"{c}/{n}={c/max(1,n):.0%}")
+        overall = f"{total_c/max(1,total_n):.0%}"
+        typer.echo(f"{model:<8}  " + "  ".join(f"{p:<22}" for p in parts) + f"  {overall}")
+    typer.echo("=" * len(header))
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 @app.command()
 def main(
-    base_results:  Optional[str] = typer.Option(None, "--base-results",  help="Eval JSONL from base model."),
-    sft_results:   Optional[str] = typer.Option(None, "--sft-results",   help="Eval JSONL from SFT model."),
-    grpo_results:  Optional[str] = typer.Option(None, "--grpo-results",  help="Eval JSONL from GRPO model."),
-    sft_log:       Optional[str] = typer.Option(None, "--sft-log",       help="Training JSONL from train_sft.py."),
-    grpo_log:      Optional[str] = typer.Option(None, "--grpo-log",      help="Training JSONL from train_grpo.py."),
-    images_dir:    Optional[str] = typer.Option(None, "--images-dir",    help="Output directory for plots (default: <repo>/images)."),
+    base_results:       Optional[str] = typer.Option(None, "--base-results",       help="GSM8K eval JSONL from base model."),
+    sft_results:        Optional[str] = typer.Option(None, "--sft-results",        help="GSM8K eval JSONL from SFT model."),
+    grpo_results:       Optional[str] = typer.Option(None, "--grpo-results",       help="GSM8K eval JSONL from GRPO model."),
+    svamp_base:         Optional[str] = typer.Option(None, "--svamp-base",         help="SVAMP eval JSONL from base model."),
+    svamp_sft:          Optional[str] = typer.Option(None, "--svamp-sft",          help="SVAMP eval JSONL from SFT model."),
+    svamp_grpo:         Optional[str] = typer.Option(None, "--svamp-grpo",         help="SVAMP eval JSONL from GRPO model."),
+    mmlu_base:          Optional[str] = typer.Option(None, "--mmlu-base",          help="MMLU eval JSONL from base model."),
+    mmlu_sft:           Optional[str] = typer.Option(None, "--mmlu-sft",           help="MMLU eval JSONL from SFT model."),
+    mmlu_grpo:          Optional[str] = typer.Option(None, "--mmlu-grpo",          help="MMLU eval JSONL from GRPO model."),
+    sft_log:            Optional[str] = typer.Option(None, "--sft-log",            help="Training JSONL from train_sft.py."),
+    grpo_log:           Optional[str] = typer.Option(None, "--grpo-log",           help="trainer_state.json from TRL GRPOTrainer."),
+    images_dir:         Optional[str] = typer.Option(None, "--images-dir",         help="Output directory for plots."),
 ) -> None:
     """Analyze eval results and training logs; produce plots and a summary table."""
     import matplotlib
-    matplotlib.use("Agg")  # headless rendering — no display required
+    matplotlib.use("Agg")
 
     out_dir = Path(images_dir) if images_dir else _ensure_images_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Load eval datasets ──────────────────────────────────────────────────
+    # ── GSM8K eval ──────────────────────────────────────────────────────────
     eval_datasets: dict[str, list[dict]] = {}
     for label, path in [("Base", base_results), ("SFT", sft_results), ("GRPO", grpo_results)]:
         if path:
@@ -265,36 +381,48 @@ def main(
             eval_datasets[label] = _read_jsonl(path)
 
     if not eval_datasets:
-        typer.echo("No eval result files provided — skipping eval plots.")
+        typer.echo("No GSM8K eval result files provided — skipping GSM8K plots.")
     else:
-        # Summary table
         _summary_table(eval_datasets)
-
-        # Accuracy comparison
         labels = list(eval_datasets.keys())
-        accuracies = [
-            sum(r.get("correct", 0) > 0 for r in rows) / len(rows)
-            for rows in eval_datasets.values()
-        ]
-        format_rates = [
-            sum(r.get("format", 0) > 0 for r in rows) / len(rows)
-            for rows in eval_datasets.values()
-        ]
-        _bar_chart(
-            labels, accuracies,
-            "Accuracy by Model", "Accuracy (%)",
-            out_dir / "accuracy_comparison.png",
-            color="steelblue",
-        )
-        _bar_chart(
-            labels, format_rates,
-            "Format Rate (#### marker) by Model", "Format Rate (%)",
-            out_dir / "format_rate_comparison.png",
-            color="darkorange",
-        )
+        accuracies  = [sum(r.get("correct", 0) > 0 for r in rows) / len(rows) for rows in eval_datasets.values()]
+        format_rates = [sum(r.get("format",  0) > 0 for r in rows) / len(rows) for rows in eval_datasets.values()]
+        _bar_chart(labels, accuracies,   "GSM8K Accuracy by Model",            "Accuracy (%)",   out_dir / "accuracy_comparison.png",   color="steelblue")
+        _bar_chart(labels, format_rates, "Format Rate (#### marker) by Model", "Format Rate (%)", out_dir / "format_rate_comparison.png", color="darkorange")
         _answer_length_distribution(eval_datasets, out_dir / "answer_length_distribution.png")
         _reward_distribution(eval_datasets, out_dir / "reward_distribution.png")
         _write_error_samples(eval_datasets, out_dir / "error_samples.txt")
+
+    # ── SVAMP eval ──────────────────────────────────────────────────────────
+    svamp_datasets: dict[str, list[dict]] = {}
+    for label, path in [("Base", svamp_base), ("SFT", svamp_sft), ("GRPO", svamp_grpo)]:
+        if path:
+            if not Path(path).exists():
+                typer.echo(f"WARNING: SVAMP {label} not found: {path} — skipping")
+                continue
+            typer.echo(f"Loading SVAMP {label} from {path} …")
+            svamp_datasets[label] = _read_jsonl(path)
+
+    if svamp_datasets:
+        svamp_labels = list(svamp_datasets.keys())
+        svamp_accs   = [sum(r.get("correct", 0) > 0 for r in rows) / max(1, len(rows)) for rows in svamp_datasets.values()]
+        _bar_chart(svamp_labels, svamp_accs, "SVAMP Accuracy by Model", "Accuracy (%)", out_dir / "svamp_accuracy.png", color="mediumseagreen")
+        if eval_datasets:
+            _cross_dataset_accuracy(eval_datasets, svamp_datasets, out_dir / "gsm8k_vs_svamp.png")
+
+    # ── MMLU eval ───────────────────────────────────────────────────────────
+    mmlu_datasets: dict[str, list[dict]] = {}
+    for label, path in [("Base", mmlu_base), ("SFT", mmlu_sft), ("GRPO", mmlu_grpo)]:
+        if path:
+            if not Path(path).exists():
+                typer.echo(f"WARNING: MMLU {label} not found: {path} — skipping")
+                continue
+            typer.echo(f"Loading MMLU {label} from {path} …")
+            mmlu_datasets[label] = _read_jsonl(path)
+
+    if mmlu_datasets:
+        _mmlu_summary_table(mmlu_datasets)
+        _mmlu_forgetting_chart(mmlu_datasets, out_dir / "mmlu_forgetting.png")
 
     # ── Training curves ─────────────────────────────────────────────────────
     if sft_log:
