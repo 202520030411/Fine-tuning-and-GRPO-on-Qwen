@@ -124,10 +124,19 @@ def main(
     )
     trainer.train()
 
+    # Save training log before model serialisation
+    trainer.state.save_to_json(str(out_dir / "trainer_state.json"))
+    typer.echo(f"Trainer state saved to {out_dir / 'trainer_state.json'}")
+
     # ── Save ──────────────────────────────────────────────────────────────
-    trainer.save_model(output_dir)
+    # The GRPO LoRA was trained on top of SFT-merged weights. Merge it into
+    # those weights and save a standalone full model so eval.py can load it
+    # with just --base-model (no separate adapter path needed).
+    typer.echo("Merging GRPO LoRA into weights and saving full model …")
+    merged = trainer.model.merge_and_unload()
+    merged.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    typer.echo(f"Saved GRPO model to {output_dir}")
+    typer.echo(f"Saved merged GRPO model to {output_dir}")
 
 
 if __name__ == "__main__":
