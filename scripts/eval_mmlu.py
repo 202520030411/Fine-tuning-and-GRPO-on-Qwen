@@ -17,15 +17,15 @@ hf_home = PROJECT_ROOT / ".hf"
 os.environ.setdefault("HF_HOME", str(hf_home))
 os.environ.setdefault("HF_DATASETS_CACHE", str(hf_home / "datasets"))
 os.environ.setdefault("TRANSFORMERS_CACHE", str(hf_home / "transformers"))
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# HF_HUB_OFFLINE intentionally NOT set — MMLU subjects are downloaded from HF at eval time
 
 import torch  # noqa: E402
 from peft import PeftModel  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from dataset.mmlu import SUBJECTS, load_mmlu_subject, preprocess_mmlu_example, write_jsonl  # noqa: E402
-from trainer.jsonl import write_jsonl as write_jsonl_trainer  # noqa: E402
+from dataset.mmlu import SUBJECTS, load_mmlu_subject, preprocess_mmlu_example  # noqa: E402
+from trainer.jsonl import write_jsonl  # noqa: E402
 
 app = typer.Typer(add_completion=False)
 
@@ -58,7 +58,7 @@ def _load_model_and_tokenizer(base_model: str, adapter_path: Optional[str], devi
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     multi_gpu = torch.cuda.device_count() > 1 and adapter_path is None
-    load_kwargs: dict = {"trust_remote_code": True, "torch_dtype": torch.float16}
+    load_kwargs: dict = {"trust_remote_code": True, "dtype": torch.float16}
     if multi_gpu:
         load_kwargs["device_map"] = "auto"
 
@@ -172,7 +172,7 @@ def main(
     typer.echo(f"  Overall MMLU accuracy: {total_correct}/{total} = {overall:.1%}")
     typer.echo(f"{'='*50}")
 
-    write_jsonl_trainer(output_path, all_results)
+    write_jsonl(output_path, all_results)
     typer.echo(f"Results written to {output_path}")
 
 
