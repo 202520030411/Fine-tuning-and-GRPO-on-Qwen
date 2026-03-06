@@ -51,7 +51,7 @@ def main(
     # ── Load base model in fp16 ───────────────────────────────────────────
     model = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         trust_remote_code=True,
     )
 
