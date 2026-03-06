@@ -133,7 +133,10 @@ def main(
     # those weights and save a standalone full model so eval.py can load it
     # with just --base-model (no separate adapter path needed).
     typer.echo("Merging GRPO LoRA into weights and saving full model …")
-    merged = trainer.model.merge_and_unload()
+    # Unwrap accelerate/DataParallel wrapper before PEFT merge so that
+    # merge_and_unload() operates on the raw PeftModel, not the wrapper.
+    unwrapped = trainer.accelerator.unwrap_model(trainer.model)
+    merged = unwrapped.merge_and_unload()
     merged.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     typer.echo(f"Saved merged GRPO model to {output_dir}")
