@@ -35,13 +35,15 @@ _LETTER_RE = re.compile(r"\b([ABCD])\b")
 def extract_letter(text: str) -> str:
     """Extract the first A/B/C/D letter from model output."""
     text = text.strip()
-    # "Answer: A" or starts with a letter
-    m = re.match(r"^([ABCD])[^a-zA-Z]", text)
+    # starts with letter, e.g. "A." or "A " or "A\n"
+    m = re.match(r"^([ABCDabcd])[^a-zA-Z]", text)
     if m:
-        return m.group(1)
-    m = re.search(r"(?:answer|Answer|ANSWER)\s*[:\-]?\s*([ABCD])\b", text)
+        return m.group(1).upper()
+    # "Answer: B" (case-insensitive)
+    m = re.search(r"(?:answer)\s*[:\-]?\s*([ABCDabcd])\b", text, re.IGNORECASE)
     if m:
-        return m.group(1)
+        return m.group(1).upper()
+    # any standalone A/B/C/D
     m = _LETTER_RE.search(text)
     if m:
         return m.group(1)
