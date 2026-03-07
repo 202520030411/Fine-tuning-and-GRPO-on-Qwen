@@ -1,5 +1,12 @@
 """
-Group Relative Policy Optimization (GRPO) trainer for GSM8K.
+DEPRECATED — kept for reference only.
+
+Active GRPO training has been migrated to TRL's GRPOTrainer.
+See scripts/train_grpo.py for the current implementation.
+
+────────────────────────────────────────────────────────────────────────────
+Group Relative Policy Optimization (GRPO) trainer for GSM8K — original
+hand-written implementation.
 
 Algorithm per optimizer step
 ─────────────────────────────
