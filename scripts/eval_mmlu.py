@@ -51,6 +51,12 @@ def extract_letter(text: str) -> str:
 
 
 def _load_model_and_tokenizer(base_model: str, adapter_path: Optional[str], device: torch.device):
+    # Auto-detect: if adapter_path exists but contains no adapter_config.json
+    # it is a fully merged model, not a LoRA adapter — treat it as the base.
+    if adapter_path and not (Path(adapter_path) / "adapter_config.json").exists():
+        base_model = adapter_path
+        adapter_path = None
+
     tokenizer = AutoTokenizer.from_pretrained(
         adapter_path if adapter_path else base_model,
         trust_remote_code=True,
