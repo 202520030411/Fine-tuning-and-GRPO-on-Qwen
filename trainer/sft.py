@@ -155,7 +155,7 @@ def run_sft(args: SFTArgs) -> None:
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
-        torch_dtype=load_dtype,
+        dtype=load_dtype,
     )
     model.config.pad_token_id = tokenizer.pad_token_id
     model.to(device)
@@ -178,7 +178,7 @@ def run_sft(args: SFTArgs) -> None:
     # AMP scaler — only used for fp16 (bf16 doesn't need it)
     use_amp = (args.fp16 or args.bf16) and device.type == "cuda"
     amp_dtype = torch.bfloat16 if args.bf16 else torch.float16
-    scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
+    scaler = torch.amp.GradScaler("cuda", enabled=args.fp16)
 
     train_ds = PromptTargetJsonl(args.train_path)
     train_loader = DataLoader(
@@ -202,7 +202,7 @@ def run_sft(args: SFTArgs) -> None:
             batch = {k: v.to(device) for k, v in batch.items()}
             if int((batch["labels"] != -100).sum().item()) == 0:
                 continue
-            with torch.cuda.amp.autocast(enabled=use_amp, dtype=amp_dtype):
+            with torch.amp.autocast("cuda", enabled=use_amp, dtype=amp_dtype):
                 out = model(**batch)
                 loss = out.loss
             scaler.scale(loss / args.grad_accum).backward()
