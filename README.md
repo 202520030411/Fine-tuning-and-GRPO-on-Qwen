@@ -25,10 +25,13 @@ dataset/        data loaders and processed JSONL files
 scripts/        runnable CLIs
   prepare_gsm8k.py    download and preprocess GSM8K
   prepare_svamp.py    download and preprocess SVAMP
-  train_sft.py        SFT training
+  train_sft.py        SFT training (LoRA)
+  train_dora.py       DoRA training (same interface as train_sft.py)
   train_grpo.py       GRPO training (uses TRL GRPOTrainer)
   eval.py             evaluate on GSM8K / SVAMP
   eval_mmlu.py        evaluate on MMLU (multiple choice)
+  eval_prompts.py     prompt design comparison (direct vs CoT vs rules)
+  eval_reasoning.py   step-by-step reasoning validity analysis
   analyze.py          generate plots and summary table
 
 trainer/        core training and reward logic
@@ -144,6 +147,47 @@ python scripts/analyze.py \
   --sft-log       model/sft_gsm8k/train_log.jsonl \
   --grpo-log      model/grpo_gsm8k/trainer_state.json \
   --images-dir    images
+```
+
+### 6. DoRA comparison (~35 min on T4)
+
+```bash
+python scripts/train_dora.py \
+  --model-name-or-path Qwen/Qwen3-0.6B-Base \
+  --train-path dataset/processed/gsm8k_train.jsonl \
+  --output-dir model/dora_gsm8k \
+  --train-log-path model/dora_gsm8k/train_log.jsonl \
+  --max-steps 300 \
+  --per-device-batch-size 2 \
+  --grad-accum 16 \
+  --max-length 384 \
+  --fp16 \
+  --gradient-checkpointing \
+  --log-every 10
+
+python scripts/eval.py --base-model Qwen/Qwen3-0.6B-Base \
+  --adapter-path model/dora_gsm8k \
+  --test-path dataset/processed/gsm8k_test.jsonl \
+  --output-path model/eval_dora.jsonl --max-new-tokens 256 --batch-size 8 --max-examples 500
+```
+
+### 7. Prompt design comparison
+
+```bash
+python scripts/eval_prompts.py \
+  --test-path dataset/processed/gsm8k_test.jsonl \
+  --base-model Qwen/Qwen3-0.6B-Base \
+  --adapter-path model/sft_gsm8k \
+  --output-dir model/prompt_comparison \
+  --max-examples 200
+```
+
+### 8. Step-by-step reasoning validity
+
+```bash
+python scripts/eval_reasoning.py \
+  --results-path model/eval_sft.jsonl \
+  --output-dir model/reasoning_sft
 ```
 
 ## Design Notes
