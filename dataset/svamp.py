@@ -27,7 +27,8 @@ def _format_answer(answer) -> str:
 
 def _format_prompt(body: str, question: str) -> str:
     return (
-        "You are a helpful assistant that solves math word problems.\n\n"
+        "You are a helpful assistant that solves math word problems. "
+        "Use basic arithmetic operations (+, −, ×, ÷) and show your reasoning step by step.\n\n"
         f"Question: {body.strip()} {question.strip()}\n"
         "Answer:"
     )

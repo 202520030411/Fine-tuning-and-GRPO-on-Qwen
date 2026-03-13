@@ -37,6 +37,7 @@ class SFTArgs:
     fp16: bool = False                  # mixed-precision (fp16) — saves ~40% VRAM on T4
     bf16: bool = False                  # mixed-precision (bf16) — better numerics on A100/H100
     gradient_checkpointing: bool = False  # trade compute for memory; ~30% slower
+    use_dora: bool = False                  # use DoRA (Weight-Decomposed Low-Rank Adaptation) instead of LoRA
     # Path to write per-step training metrics as JSONL (None = don't write)
     train_log_path: Optional[str] = None
 
@@ -171,6 +172,7 @@ def run_sft(args: SFTArgs) -> None:
         lora_dropout=args.lora_dropout,
         target_modules=target_modules,
         bias="none",
+        use_dora=args.use_dora,
     )
     model = get_peft_model(model, lora_cfg)
     model.train()

@@ -104,6 +104,48 @@
   \end{columns}
 \end{frame}
 
+% ════════════════════════════════════════════════════════════
+\begin{frame}{Application Story: Photo-to-Answer Pipeline}
+
+  \begin{center}
+    \begin{tikzpicture}[
+      node distance=1.8cm,
+      every node/.style={font=\small},
+      box/.style={rectangle, rounded corners=6pt, draw=darkgray,
+                  minimum height=1.2cm, minimum width=2.6cm,
+                  text centered, font=\small\bfseries},
+      arr/.style={-{Stealth[length=6pt]}, thick, darkgray},
+    ]
+      \node[box, fill=baseblue!20]   (img)  {Image};
+      \node[box, fill=sftoran!20, right=of img]  (ocr)  {OCR / Text};
+      \node[box, fill=grpogre!30, right=of ocr]  (llm)  {LLM};
+      \node[box, fill=baseblue!20, right=of llm] (ans)  {Answer};
+
+      \draw[arr] (img) -- (ocr);
+      \draw[arr] (ocr) -- (llm);
+      \draw[arr] (llm) -- (ans);
+
+      % highlight box around LLM
+      \begin{scope}[on background layer]
+        \node[fit=(llm), inner sep=6pt, fill=grpogre!10,
+              draw=grpogre, thick, rounded corners=8pt,
+              label={[font=\scriptsize\itshape, text=grpogre]below:This project}] {};
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.6em}
+  \textbf{Real-world scenario — Yuansouti (小猿搜题)}
+  \begin{itemize}
+    \item Students photograph a math problem $\rightarrow$ OCR extracts the text
+          $\rightarrow$ an LLM solves it step by step $\rightarrow$ answer is returned.
+    \item This project focuses on the \badge{grpogre}{LLM} stage:
+          fine-tuning \textbf{Qwen3-0.6B} so it can reliably solve
+          grade-school arithmetic from the extracted text.
+  \end{itemize}
+
+\end{frame}
+
 \section{Literature Review}
 \begin{frame}{Literature Review: Math Reasoning in LLMs}
 
