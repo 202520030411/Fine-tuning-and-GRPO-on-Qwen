@@ -47,6 +47,7 @@ def main(
     fp16: bool = typer.Option(False, help="Enable fp16 mixed precision (T4/V100)."),
     bf16: bool = typer.Option(False, help="Enable bf16 mixed precision (A100/H100)."),
     gradient_checkpointing: bool = typer.Option(False, help="Enable gradient checkpointing to save VRAM."),
+    use_dora: bool = typer.Option(False, help="Use DoRA (Weight-Decomposed LoRA) instead of standard LoRA."),
 ) -> None:
     args = SFTArgs(
         model_name_or_path=model_name_or_path,
@@ -69,6 +70,7 @@ def main(
         fp16=fp16,
         bf16=bf16,
         gradient_checkpointing=gradient_checkpointing,
+        use_dora=use_dora,
     )
     run_sft(args)
 

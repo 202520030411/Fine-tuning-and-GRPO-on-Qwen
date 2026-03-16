@@ -104,6 +104,48 @@
   \end{columns}
 \end{frame}
 
+% ════════════════════════════════════════════════════════════
+\begin{frame}{Application Story: Photo-to-Answer Pipeline}
+
+  \begin{center}
+    \begin{tikzpicture}[
+      node distance=1.8cm,
+      every node/.style={font=\small},
+      box/.style={rectangle, rounded corners=6pt, draw=darkgray,
+                  minimum height=1.2cm, minimum width=2.6cm,
+                  text centered, font=\small\bfseries},
+      arr/.style={-{Stealth[length=6pt]}, thick, darkgray},
+    ]
+      \node[box, fill=baseblue!20]   (img)  {Image};
+      \node[box, fill=sftoran!20, right=of img]  (ocr)  {OCR / Text};
+      \node[box, fill=grpogre!30, right=of ocr]  (llm)  {LLM};
+      \node[box, fill=baseblue!20, right=of llm] (ans)  {Answer};
+
+      \draw[arr] (img) -- (ocr);
+      \draw[arr] (ocr) -- (llm);
+      \draw[arr] (llm) -- (ans);
+
+      % highlight box around LLM
+      \begin{scope}[on background layer]
+        \node[fit=(llm), inner sep=6pt, fill=grpogre!10,
+              draw=grpogre, thick, rounded corners=8pt,
+              label={[font=\scriptsize\itshape, text=grpogre]below:This project}] {};
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.6em}
+  \textbf{Real-world scenario — Yuansouti (小猿搜题)}
+  \begin{itemize}
+    \item Students photograph a math problem $\rightarrow$ OCR extracts the text
+          $\rightarrow$ an LLM solves it step by step $\rightarrow$ answer is returned.
+    \item This project focuses on the \badge{grpogre}{LLM} stage:
+          fine-tuning \textbf{Qwen3-0.6B} so it can reliably solve
+          grade-school arithmetic from the extracted text.
+  \end{itemize}
+
+\end{frame}
+
 \section{Literature Review}
 \begin{frame}{Literature Review: Math Reasoning in LLMs}
 
@@ -567,6 +609,198 @@ The two papers offer different interpretations of how reasoning ability emerges.
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
+% ──────────────────────────────────────────────────────────
+%   ADDITIONAL EXPERIMENTS  (Hanfu's contribution)
+% ──────────────────────────────────────────────────────────
+% ════════════════════════════════════════════════════════════
+
+\section{Additional Experiments}
+
+\begin{frame}{Additional Experiments — Overview}
+  Three further experiments to address key design decisions
+  required by the project brief.
+
+  \vspace{1em}
+  \begin{enumerate}
+    \item \textbf{Prompt Design Comparison}\\
+          Does the prompt format matter? Compare three strategies.
+    \item \textbf{DoRA vs LoRA}\\
+          Does Weight-Decomposed LoRA outperform standard LoRA?
+    \item \textbf{Step-by-Step Reasoning Validity}\\
+          Are the intermediate arithmetic steps actually correct?
+  \end{enumerate}
+
+  \vspace{1em}
+  \begin{center}\small
+    \textit{All experiments use the same Qwen3-0.6B model, GSM8K dataset,
+    and hyperparameters for fair comparison.}
+  \end{center}
+\end{frame}
+
+% ── Prompt Design ─────────────────────────────────────────
+\begin{frame}{Experiment 1 — Prompt Design Comparison}
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Three Strategies}
+        \begin{itemize}
+          \item \badge{baseblue}{direct} Bare question, no guidance
+          \item \badge{sftoran}{cot} ``Let's think step by step''
+                (Chain-of-Thought)
+          \item \badge{grpogre}{rules} Explicit math rules
+                (+, $-$, $\times$, $\div$) then step-by-step
+        \end{itemize}
+      \end{block}
+
+      \vspace{0.6em}
+      \textbf{Why it matters}
+      \begin{itemize}\small
+        \item Prompt design is listed as a key decision
+        \item Same model weights — only the prompt changes
+        \item Tests whether explicit instructions help a small model
+      \end{itemize}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Prompt Examples}
+        \footnotesize
+        \textbf{direct:}\\
+        \texttt{Question: Janet has 16 eggs...\\Answer:}
+
+        \vspace{0.4em}
+        \textbf{cot:}\\
+        \texttt{You are a helpful assistant...\\
+        Question: Janet has 16 eggs...\\
+        Answer: Let's think step by step.}
+
+        \vspace{0.4em}
+        \textbf{rules:}\\
+        \texttt{You are a math tutor. Rules:\\
+        - Addition (+): combining...\\
+        - Subtraction (-): difference...\\
+        Question: Janet has 16 eggs...\\
+        Answer: Let's solve step by step.}
+      \end{block}
+
+      \vspace{0.3em}
+      \includegraphics[width=\linewidth]{prompt_comparison.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ── DoRA vs LoRA ──────────────────────────────────────────
+\begin{frame}{Experiment 2 — DoRA vs LoRA}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{block}{What is DoRA?}
+        \begin{itemize}\small
+          \item LoRA: $W' = W + BA$ \quad ($B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$)
+          \item DoRA decomposes weight into \textbf{magnitude} and \textbf{direction}:
+                $W' = m \cdot \frac{W + BA}{\|W + BA\|}$
+          \item Extra learnable magnitude scalar $m$ per layer
+          \item Inspired by Weight Normalization (Salimans \& Kingma, 2016)
+        \end{itemize}
+      \end{block}
+
+      \vspace{0.5em}
+      \begin{block}{Experimental Setup}
+        \small
+        \begin{tabular}{ll}
+          \toprule
+          & LoRA \quad / \quad DoRA \\
+          \midrule
+          Rank $r$     & 8 \\
+          Alpha $\alpha$ & 16 \\
+          Target modules & all attn + MLP \\
+          Steps        & 300 \\
+          Batch size   & 2 $\times$ 16 = 32 \\
+          Precision    & fp16 \\
+          \bottomrule
+        \end{tabular}
+
+        \vspace{0.3em}
+        \textit{Identical hyperparameters — only \texttt{use\_dora} differs.}
+      \end{block}
+    \end{column}
+
+    \begin{column}{0.45\textwidth}
+      \begin{block}{GSM8K Results}
+        \begin{center}
+        \begin{tabular}{lcc}
+          \toprule
+          Method & Accuracy & Format \\
+          \midrule
+          LoRA (SFT)  & \textbf{51.6\%} & 95.4\% \\
+          DoRA (SFT)  & \textit{TBD}    & \textit{TBD} \\
+          \bottomrule
+        \end{tabular}
+        \end{center}
+        \small\textit{(Fill in after running on Kaggle)}
+      \end{block}
+
+      \vspace{0.5em}
+      \begin{block}{Key Question}
+        Does the magnitude--direction decomposition in DoRA
+        help a 0.6B model learn math reasoning better than
+        standard LoRA?
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ── Reasoning Validity ────────────────────────────────────
+\begin{frame}{Experiment 3 — Step-by-Step Reasoning Validity}
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Motivation}\\
+      Final-answer accuracy only tells us \emph{what} the model got right,
+      not \emph{how}. A model could reach the right answer through
+      wrong intermediate steps (lucky cancellation).
+
+      \vspace{0.6em}
+      \textbf{Method}
+      \begin{itemize}\small
+        \item Extract every arithmetic expression from the completion\\
+              e.g.\ \texttt{16 - 3 = 13}, \texttt{5 * 4 = 20}
+        \item Verify each calculation independently
+        \item Classify completions into four quadrants:
+      \end{itemize}
+
+      \vspace{0.4em}
+      \footnotesize
+      \begin{tabular}{l|cc}
+        & Correct answer & Wrong answer \\
+        \hline
+        Valid reasoning  & \textcolor{grpogre}{\textbf{Best}} & Unlucky \\
+        Invalid reasoning & Lucky   & \textcolor{red}{\textbf{Worst}} \\
+      \end{tabular}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Metrics}
+        \begin{itemize}\small
+          \item \textbf{Step accuracy}: fraction of arithmetic steps
+                that are mathematically correct
+          \item \textbf{Reasoning validity rate}: fraction of completions
+                where \emph{all} extracted steps are correct
+          \item \textbf{Avg steps}: reasoning depth per completion
+        \end{itemize}
+      \end{block}
+
+      \vspace{0.4em}
+      \includegraphics[width=\linewidth]{reasoning_validity.png}
+
+      \vspace{0.3em}
+      \begin{center}\small
+        \textit{Compares Base vs SFT vs GRPO reasoning quality}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════
 \section{Summary}
 \begin{frame}{Summary \& Discussion}
 
@@ -578,7 +812,9 @@ The two papers offer different interpretations of how reasoning ability emerges.
           \item \textbf{SFT}: +14 pp on GSM8K, 95\% format adoption
           \item \textbf{GRPO}: reward rises +24\%, format improves further
           \item \textbf{No catastrophic forgetting} on MMLU
-          \item Full pipeline: data → SFT → GRPO → multi-dataset eval → plots
+          \item \textbf{Prompt comparison}: CoT vs direct vs rules
+          \item \textbf{DoRA vs LoRA}: same setup, method comparison
+          \item \textbf{Reasoning validity}: verified arithmetic steps
         \end{itemize}
       \end{block}
     \end{column}

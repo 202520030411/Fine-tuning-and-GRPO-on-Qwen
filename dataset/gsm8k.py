@@ -34,7 +34,8 @@ def _extract_final_answer(gsm8k_answer_field: str) -> str:
 
 def _format_prompt(question: str) -> str:
     return (
-        "You are a helpful assistant that solves grade-school math word problems.\n\n"
+        "You are a helpful assistant that solves grade-school math word problems. "
+        "Use basic arithmetic operations (+, −, ×, ÷) and show your reasoning step by step.\n\n"
         f"Question: {question.strip()}\n"
         "Answer:"
     )
@@ -64,7 +65,7 @@ def preprocess_gsm8k_example(question: str, answer: str) -> GSM8KExample:
 
 def load_gsm8k_hf(split: Literal["train", "test"]):
     # Official dataset name on HF: 'gsm8k' config 'main'
-    return load_dataset("gsm8k", "main", split=split)
+    return load_dataset("openai/gsm8k", "main", split=split)
 
 
 def write_jsonl(path: str | Path, rows: Iterable[dict]) -> None:
