@@ -84,7 +84,7 @@ def _bar_chart(
     typer.echo(f"  Saved {out_path}")
 
 
-def _training_curve_sft(rows: list[dict], out_path: Path) -> None:
+def _training_curve_sft(rows: list[dict], out_path: Path, title: str = "SFT Training Loss") -> None:
     import matplotlib.pyplot as plt
 
     steps  = [r["step"] for r in rows]
@@ -92,7 +92,7 @@ def _training_curve_sft(rows: list[dict], out_path: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(steps, losses, marker="o", markersize=4, color="tomato", linewidth=1.5)
-    ax.set_title("SFT Training Loss", fontsize=13, fontweight="bold")
+    ax.set_title(title, fontsize=13, fontweight="bold")
     ax.set_xlabel("Optimizer Step")
     ax.set_ylabel("Avg Cross-Entropy Loss")
     ax.grid(axis="y", alpha=0.4)
@@ -509,9 +509,9 @@ def main(
     mmlu_sft:           Optional[str] = typer.Option(None, "--mmlu-sft",           help="MMLU eval JSONL from SFT model."),
     mmlu_grpo:          Optional[str] = typer.Option(None, "--mmlu-grpo",          help="MMLU eval JSONL from GRPO model."),
     # ── Training logs ─────────────────────────────────────────────────────
-    sft_log:            Optional[str] = typer.Option(None, "--sft-log",            help="Training JSONL from train_sft.py."),
+    sft_log:            Optional[str] = typer.Option(None, "--sft-log",            help="Training JSONL from DoRA-SFT (train_sft.py --use-dora)."),
     grpo_log:           Optional[str] = typer.Option(None, "--grpo-log",           help="trainer_state.json from TRL GRPOTrainer."),
-    dora_log:           Optional[str] = typer.Option(None, "--dora-log",           help="Training JSONL from train_dora.py."),
+    dora_log:           Optional[str] = typer.Option(None, "--lora-sft-log",       help="Training JSONL from LoRA-SFT (train_sft.py without --use-dora).")  ,
     # ── Prompt comparison dirs ────────────────────────────────────────────
     prompt_base_dir:    Optional[str] = typer.Option(None, "--prompt-base-dir",    help="Output dir of eval_prompts.py run on base model."),
     prompt_sft_dir:     Optional[str] = typer.Option(None, "--prompt-sft-dir",     help="Output dir of eval_prompts.py run on SFT model."),
@@ -592,21 +592,21 @@ def main(
     # ── Training curves ─────────────────────────────────────────────────────
     if sft_log:
         if not Path(sft_log).exists():
-            typer.echo(f"WARNING: SFT log not found: {sft_log} — skipping")
+            typer.echo(f"WARNING: DoRA-SFT log not found: {sft_log} — skipping")
         else:
-            typer.echo(f"Loading SFT training log from {sft_log} …")
+            typer.echo(f"Loading DoRA-SFT training log from {sft_log} …")
             sft_rows = _read_jsonl(sft_log)
             if sft_rows:
-                _training_curve_sft(sft_rows, out_dir / "sft_training_curve.png")
+                _training_curve_sft(sft_rows, out_dir / "dora_sft_training_curve.png", title="DoRA-SFT Training Loss")
 
     if dora_log:
         if not Path(dora_log).exists():
-            typer.echo(f"WARNING: DoRA log not found: {dora_log} — skipping")
+            typer.echo(f"WARNING: LoRA-SFT log not found: {dora_log} — skipping")
         else:
-            typer.echo(f"Loading DoRA training log from {dora_log} …")
+            typer.echo(f"Loading LoRA-SFT training log from {dora_log} …")
             dora_rows = _read_jsonl(dora_log)
             if dora_rows:
-                _training_curve_sft(dora_rows, out_dir / "dora_training_curve.png")
+                _training_curve_sft(dora_rows, out_dir / "lora_sft_training_curve.png", title="LoRA-SFT Training Loss")
 
     if grpo_log:
         if not Path(grpo_log).exists():
