@@ -318,6 +318,150 @@ def _mmlu_forgetting_chart(mmlu_sets: dict[str, list[dict]], out_path: Path) -> 
     typer.echo(f"  Saved {out_path}")
 
 
+def _dora_vs_lora_chart(eval_datasets: dict[str, list[dict]], out_path: Path) -> None:
+    """Bar chart comparing LoRA (SFT) vs DoRA accuracy and format rate side by side."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    models = list(eval_datasets.keys())
+    accs   = [sum(r.get("correct", 0) > 0 for r in eval_datasets[m]) / max(1, len(eval_datasets[m])) * 100 for m in models]
+    fmts   = [sum(r.get("format",  0) > 0 for r in eval_datasets[m]) / max(1, len(eval_datasets[m])) * 100 for m in models]
+
+    x = np.arange(len(models))
+    w = 0.35
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars1 = ax.bar(x - w / 2, accs, w, label="Accuracy",    color="steelblue",   edgecolor="black")
+    bars2 = ax.bar(x + w / 2, fmts, w, label="Format Rate", color="darkorange",  edgecolor="black")
+    for bar in list(bars1) + list(bars2):
+        h = bar.get_height()
+        ax.annotate(f"{h:.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
+                    xytext=(0, 3), textcoords="offset points", ha="center", fontsize=9)
+    ax.set_xticks(x)
+    ax.set_xticklabels(models)
+    ax.set_ylabel("Rate (%)")
+    ax.set_ylim(0, 110)
+    ax.set_title("Model Comparison: Accuracy & Format Rate", fontsize=13, fontweight="bold")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    typer.echo(f"  Saved {out_path}")
+
+
+def _prompt_comparison_chart(
+    prompt_dirs: dict[str, str],
+    out_path: Path,
+) -> None:
+    """
+    Grouped bar chart: prompt strategies (direct / cot / rules) on x-axis,
+    one bar group per model.
+    Reads prompt_comparison_summary.json from each directory.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    all_data: dict[str, dict[str, float]] = {}  # model -> strategy -> accuracy
+    for model, dir_path in prompt_dirs.items():
+        summary_file = Path(dir_path) / "prompt_comparison_summary.json"
+        if not summary_file.exists():
+            typer.echo(f"  WARNING: {summary_file} not found — skipping {model}")
+            continue
+        with open(summary_file) as f:
+            metrics = json.load(f)
+        all_data[model] = {m["strategy"]: m["accuracy"] * 100 for m in metrics}
+
+    if not all_data:
+        typer.echo("  No prompt comparison data found — skipping chart.")
+        return
+
+    strategies = ["direct", "cot", "rules"]
+    strategy_labels = {"direct": "Direct\n(no guidance)", "cot": "CoT\n(step by step)", "rules": "Math Rules\n(+,−,×,÷)"}
+    models = list(all_data.keys())
+    x = np.arange(len(strategies))
+    w = 0.8 / max(len(models), 1)
+    colors = ["steelblue", "darkorange", "mediumseagreen", "mediumpurple"]
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for i, (model, color) in enumerate(zip(models, colors)):
+        vals = [all_data[model].get(s, 0) for s in strategies]
+        offset = (i - len(models) / 2 + 0.5) * w
+        bars = ax.bar(x + offset, vals, w, label=model, color=color, edgecolor="black")
+        for bar in bars:
+            h = bar.get_height()
+            ax.annotate(f"{h:.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
+                        xytext=(0, 3), textcoords="offset points", ha="center", fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([strategy_labels.get(s, s) for s in strategies], fontsize=10)
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_ylim(0, 110)
+    ax.set_title("Prompt Strategy Comparison (GSM8K)", fontsize=13, fontweight="bold")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    typer.echo(f"  Saved {out_path}")
+
+
+def _reasoning_comparison_chart(
+    reasoning_dirs: dict[str, str],
+    out_path: Path,
+) -> None:
+    """
+    Grouped bar chart comparing reasoning validity metrics across models.
+    Reads reasoning_summary.json from each directory.
+    Metrics shown: step_accuracy, reasoning_validity_rate, final_answer_accuracy.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    model_summaries: dict[str, dict] = {}
+    for model, dir_path in reasoning_dirs.items():
+        summary_file = Path(dir_path) / "reasoning_summary.json"
+        if not summary_file.exists():
+            typer.echo(f"  WARNING: {summary_file} not found — skipping {model}")
+            continue
+        with open(summary_file) as f:
+            model_summaries[model] = json.load(f)
+
+    if not model_summaries:
+        typer.echo("  No reasoning summary data found — skipping chart.")
+        return
+
+    metrics = [
+        ("step_accuracy",          "Step Accuracy",          "#FF9800"),
+        ("reasoning_validity_rate","Reasoning Validity",     "#4CAF50"),
+        ("final_answer_accuracy",  "Final Answer Accuracy",  "#2196F3"),
+    ]
+    models = list(model_summaries.keys())
+    x = np.arange(len(models))
+    w = 0.8 / len(metrics)
+
+    fig, ax = plt.subplots(figsize=(max(8, len(models) * 2.5), 5))
+    for i, (key, label, color) in enumerate(metrics):
+        vals = [model_summaries[m].get(key, 0) * 100 for m in models]
+        offset = (i - len(metrics) / 2 + 0.5) * w
+        bars = ax.bar(x + offset, vals, w, label=label, color=color, edgecolor="black")
+        for bar in bars:
+            h = bar.get_height()
+            ax.annotate(f"{h:.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
+                        xytext=(0, 3), textcoords="offset points", ha="center", fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(models)
+    ax.set_ylabel("Rate (%)")
+    ax.set_ylim(0, 115)
+    ax.set_title("Step-by-Step Reasoning Validity by Model", fontsize=13, fontweight="bold")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    typer.echo(f"  Saved {out_path}")
+
+
 def _mmlu_summary_table(mmlu_sets: dict[str, list[dict]]) -> None:
     subjects: list[str] = []
     for rows in mmlu_sets.values():
@@ -350,17 +494,32 @@ def _mmlu_summary_table(mmlu_sets: dict[str, list[dict]]) -> None:
 
 @app.command()
 def main(
+    # ── GSM8K eval ────────────────────────────────────────────────────────
     base_results:       Optional[str] = typer.Option(None, "--base-results",       help="GSM8K eval JSONL from base model."),
     sft_results:        Optional[str] = typer.Option(None, "--sft-results",        help="GSM8K eval JSONL from SFT model."),
     grpo_results:       Optional[str] = typer.Option(None, "--grpo-results",       help="GSM8K eval JSONL from GRPO model."),
+    dora_results:       Optional[str] = typer.Option(None, "--dora-results",       help="GSM8K eval JSONL from DoRA model."),
+    # ── SVAMP eval ────────────────────────────────────────────────────────
     svamp_base:         Optional[str] = typer.Option(None, "--svamp-base",         help="SVAMP eval JSONL from base model."),
     svamp_sft:          Optional[str] = typer.Option(None, "--svamp-sft",          help="SVAMP eval JSONL from SFT model."),
     svamp_grpo:         Optional[str] = typer.Option(None, "--svamp-grpo",         help="SVAMP eval JSONL from GRPO model."),
+    # ── MMLU eval ─────────────────────────────────────────────────────────
     mmlu_base:          Optional[str] = typer.Option(None, "--mmlu-base",          help="MMLU eval JSONL from base model."),
     mmlu_sft:           Optional[str] = typer.Option(None, "--mmlu-sft",           help="MMLU eval JSONL from SFT model."),
     mmlu_grpo:          Optional[str] = typer.Option(None, "--mmlu-grpo",          help="MMLU eval JSONL from GRPO model."),
+    # ── Training logs ─────────────────────────────────────────────────────
     sft_log:            Optional[str] = typer.Option(None, "--sft-log",            help="Training JSONL from train_sft.py."),
     grpo_log:           Optional[str] = typer.Option(None, "--grpo-log",           help="trainer_state.json from TRL GRPOTrainer."),
+    dora_log:           Optional[str] = typer.Option(None, "--dora-log",           help="Training JSONL from train_dora.py."),
+    # ── Prompt comparison dirs ────────────────────────────────────────────
+    prompt_base_dir:    Optional[str] = typer.Option(None, "--prompt-base-dir",    help="Output dir of eval_prompts.py run on base model."),
+    prompt_sft_dir:     Optional[str] = typer.Option(None, "--prompt-sft-dir",     help="Output dir of eval_prompts.py run on SFT model."),
+    # ── Reasoning validity dirs ───────────────────────────────────────────
+    reasoning_base_dir: Optional[str] = typer.Option(None, "--reasoning-base-dir", help="Output dir of eval_reasoning.py run on base model."),
+    reasoning_sft_dir:  Optional[str] = typer.Option(None, "--reasoning-sft-dir",  help="Output dir of eval_reasoning.py run on SFT model."),
+    reasoning_grpo_dir: Optional[str] = typer.Option(None, "--reasoning-grpo-dir", help="Output dir of eval_reasoning.py run on GRPO model."),
+    reasoning_dora_dir: Optional[str] = typer.Option(None, "--reasoning-dora-dir", help="Output dir of eval_reasoning.py run on DoRA model."),
+    # ── Output ────────────────────────────────────────────────────────────
     images_dir:         Optional[str] = typer.Option(None, "--images-dir",         help="Output directory for plots."),
 ) -> None:
     """Analyze eval results and training logs; produce plots and a summary table."""
@@ -370,9 +529,10 @@ def main(
     out_dir = Path(images_dir) if images_dir else _ensure_images_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── GSM8K eval ──────────────────────────────────────────────────────────
+    # ── GSM8K eval (Base / SFT / GRPO / DoRA) ───────────────────────────
     eval_datasets: dict[str, list[dict]] = {}
-    for label, path in [("Base", base_results), ("SFT", sft_results), ("GRPO", grpo_results)]:
+    for label, path in [("Base", base_results), ("SFT", sft_results),
+                         ("GRPO", grpo_results), ("DoRA", dora_results)]:
         if path:
             if not Path(path).exists():
                 typer.echo(f"WARNING: {label} results file not found: {path} — skipping")
@@ -385,13 +545,16 @@ def main(
     else:
         _summary_table(eval_datasets)
         labels = list(eval_datasets.keys())
-        accuracies  = [sum(r.get("correct", 0) > 0 for r in rows) / len(rows) for rows in eval_datasets.values()]
+        accuracies   = [sum(r.get("correct", 0) > 0 for r in rows) / len(rows) for rows in eval_datasets.values()]
         format_rates = [sum(r.get("format",  0) > 0 for r in rows) / len(rows) for rows in eval_datasets.values()]
-        _bar_chart(labels, accuracies,   "GSM8K Accuracy by Model",            "Accuracy (%)",   out_dir / "accuracy_comparison.png",   color="steelblue")
+        _bar_chart(labels, accuracies,   "GSM8K Accuracy by Model",            "Accuracy (%)",    out_dir / "accuracy_comparison.png",   color="steelblue")
         _bar_chart(labels, format_rates, "Format Rate (#### marker) by Model", "Format Rate (%)", out_dir / "format_rate_comparison.png", color="darkorange")
         _answer_length_distribution(eval_datasets, out_dir / "answer_length_distribution.png")
         _reward_distribution(eval_datasets, out_dir / "reward_distribution.png")
         _write_error_samples(eval_datasets, out_dir / "error_samples.txt")
+        # Combined accuracy + format chart (useful when DoRA is included)
+        if len(eval_datasets) > 1:
+            _dora_vs_lora_chart(eval_datasets, out_dir / "model_comparison.png")
 
     # ── SVAMP eval ──────────────────────────────────────────────────────────
     svamp_datasets: dict[str, list[dict]] = {}
@@ -434,6 +597,15 @@ def main(
             if sft_rows:
                 _training_curve_sft(sft_rows, out_dir / "sft_training_curve.png")
 
+    if dora_log:
+        if not Path(dora_log).exists():
+            typer.echo(f"WARNING: DoRA log not found: {dora_log} — skipping")
+        else:
+            typer.echo(f"Loading DoRA training log from {dora_log} …")
+            dora_rows = _read_jsonl(dora_log)
+            if dora_rows:
+                _training_curve_sft(dora_rows, out_dir / "dora_training_curve.png")
+
     if grpo_log:
         if not Path(grpo_log).exists():
             typer.echo(f"WARNING: GRPO log not found: {grpo_log} — skipping")
@@ -442,6 +614,33 @@ def main(
             grpo_rows = _read_grpo_log(grpo_log)
             if grpo_rows:
                 _training_curves_grpo(grpo_rows, out_dir / "grpo_training_curves.png")
+
+    # ── Prompt comparison ───────────────────────────────────────────────────
+    prompt_dirs: dict[str, str] = {}
+    for label, d in [("Base", prompt_base_dir), ("SFT", prompt_sft_dir)]:
+        if d and Path(d).exists():
+            prompt_dirs[label] = d
+        elif d:
+            typer.echo(f"WARNING: prompt dir not found: {d} — skipping {label}")
+    if prompt_dirs:
+        typer.echo("Generating prompt comparison chart …")
+        _prompt_comparison_chart(prompt_dirs, out_dir / "prompt_comparison.png")
+
+    # ── Reasoning validity ──────────────────────────────────────────────────
+    reasoning_dirs: dict[str, str] = {}
+    for label, d in [
+        ("Base",  reasoning_base_dir),
+        ("SFT",   reasoning_sft_dir),
+        ("GRPO",  reasoning_grpo_dir),
+        ("DoRA",  reasoning_dora_dir),
+    ]:
+        if d and Path(d).exists():
+            reasoning_dirs[label] = d
+        elif d:
+            typer.echo(f"WARNING: reasoning dir not found: {d} — skipping {label}")
+    if reasoning_dirs:
+        typer.echo("Generating reasoning validity chart …")
+        _reasoning_comparison_chart(reasoning_dirs, out_dir / "reasoning_comparison.png")
 
     typer.echo(f"\nAll outputs saved to {out_dir}/")
 
