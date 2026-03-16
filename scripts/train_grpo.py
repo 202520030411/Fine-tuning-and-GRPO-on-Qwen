@@ -61,7 +61,11 @@ def main(
         model = model.merge_and_unload()
         typer.echo(f"Merged SFT adapter from {ref_model_path}")
 
-    # ── Add fresh LoRA for GRPO ───────────────────────────────────────────
+    # ── Add fresh DoRA adapter for GRPO ──────────────────────────────────
+    # DoRA decomposes the weight update into magnitude + direction, giving
+    # more expressiveness per parameter than standard LoRA at the same rank.
+    # For GRPO (behavioral alignment), the extra degrees of freedom in DoRA
+    # are unlikely to hurt and may help the policy converge more reliably.
     lora_cfg = LoraConfig(
         r=lora_r,
         lora_alpha=lora_alpha,
@@ -69,6 +73,7 @@ def main(
                         "gate_proj", "up_proj", "down_proj"],
         bias="none",
         task_type="CAUSAL_LM",
+        use_dora=True,
     )
     model = get_peft_model(model, lora_cfg)
     model.print_trainable_parameters()
