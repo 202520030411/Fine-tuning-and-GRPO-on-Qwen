@@ -182,7 +182,7 @@ def main(
         "--sft-results",          str(tmp / "eval_dora_sft.jsonl"),
         "--grpo-results",         str(tmp / "eval_grpo.jsonl"),
         "--sft-log",              str(tmp / "dora_sft_log.jsonl"),
-        "--dora-log",             str(tmp / "lora_sft_log.jsonl"),
+        "--lora-sft-log",         str(tmp / "lora_sft_log.jsonl"),
         "--grpo-log",             str(tmp / "grpo" / "trainer_state.json"),
         "--mmlu-base",            str(tmp / "eval_mmlu.jsonl"),
         "--prompt-base-dir",      str(tmp / "prompt_base"),

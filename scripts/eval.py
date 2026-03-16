@@ -15,7 +15,6 @@ hf_home = PROJECT_ROOT / ".hf"
 os.environ.setdefault("HF_HOME", str(hf_home))
 os.environ.setdefault("HF_DATASETS_CACHE", str(hf_home / "datasets"))
 os.environ.setdefault("TRANSFORMERS_CACHE", str(hf_home / "transformers"))
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import torch  # noqa: E402
 from peft import PeftModel  # noqa: E402
