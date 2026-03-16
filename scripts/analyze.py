@@ -496,9 +496,10 @@ def _mmlu_summary_table(mmlu_sets: dict[str, list[dict]]) -> None:
 def main(
     # ── GSM8K eval ────────────────────────────────────────────────────────
     base_results:       Optional[str] = typer.Option(None, "--base-results",       help="GSM8K eval JSONL from base model."),
-    sft_results:        Optional[str] = typer.Option(None, "--sft-results",        help="GSM8K eval JSONL from SFT model."),
+    lora_sft_results:   Optional[str] = typer.Option(None, "--lora-sft-results",   help="GSM8K eval JSONL from LoRA-SFT model (comparison)."),
+    sft_results:        Optional[str] = typer.Option(None, "--sft-results",        help="GSM8K eval JSONL from main SFT model (DoRA-SFT in full DoRA pipeline)."),
     grpo_results:       Optional[str] = typer.Option(None, "--grpo-results",       help="GSM8K eval JSONL from GRPO model."),
-    dora_results:       Optional[str] = typer.Option(None, "--dora-results",       help="GSM8K eval JSONL from DoRA model."),
+    dora_results:       Optional[str] = typer.Option(None, "--dora-results",       help="GSM8K eval JSONL from standalone DoRA model (optional)."),
     # ── SVAMP eval ────────────────────────────────────────────────────────
     svamp_base:         Optional[str] = typer.Option(None, "--svamp-base",         help="SVAMP eval JSONL from base model."),
     svamp_sft:          Optional[str] = typer.Option(None, "--svamp-sft",          help="SVAMP eval JSONL from SFT model."),
@@ -529,10 +530,11 @@ def main(
     out_dir = Path(images_dir) if images_dir else _ensure_images_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── GSM8K eval (Base / SFT / GRPO / DoRA) ───────────────────────────
+    # ── GSM8K eval (Base / LoRA-SFT / DoRA-SFT / GRPO) ──────────────────
     eval_datasets: dict[str, list[dict]] = {}
-    for label, path in [("Base", base_results), ("SFT", sft_results),
-                         ("GRPO", grpo_results), ("DoRA", dora_results)]:
+    for label, path in [("Base", base_results), ("LoRA-SFT", lora_sft_results),
+                         ("SFT", sft_results), ("GRPO", grpo_results),
+                         ("DoRA", dora_results)]:
         if path:
             if not Path(path).exists():
                 typer.echo(f"WARNING: {label} results file not found: {path} — skipping")
