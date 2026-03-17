@@ -502,6 +502,7 @@ def main(
     dora_results:       Optional[str] = typer.Option(None, "--dora-results",       help="GSM8K eval JSONL from standalone DoRA model (optional)."),
     # ── SVAMP eval ────────────────────────────────────────────────────────
     svamp_base:         Optional[str] = typer.Option(None, "--svamp-base",         help="SVAMP eval JSONL from base model."),
+    svamp_lora_sft:     Optional[str] = typer.Option(None, "--svamp-lora-sft",     help="SVAMP eval JSONL from LoRA-SFT model."),
     svamp_sft:          Optional[str] = typer.Option(None, "--svamp-sft",          help="SVAMP eval JSONL from SFT model."),
     svamp_grpo:         Optional[str] = typer.Option(None, "--svamp-grpo",         help="SVAMP eval JSONL from GRPO model."),
     # ── MMLU eval ─────────────────────────────────────────────────────────
@@ -560,7 +561,7 @@ def main(
 
     # ── SVAMP eval ──────────────────────────────────────────────────────────
     svamp_datasets: dict[str, list[dict]] = {}
-    for label, path in [("Base", svamp_base), ("SFT", svamp_sft), ("GRPO", svamp_grpo)]:
+    for label, path in [("Base", svamp_base), ("LoRA-SFT", svamp_lora_sft), ("SFT", svamp_sft), ("GRPO", svamp_grpo)]:
         if path:
             if not Path(path).exists():
                 typer.echo(f"WARNING: SVAMP {label} not found: {path} — skipping")
