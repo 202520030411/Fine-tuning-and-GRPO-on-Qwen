@@ -20,7 +20,7 @@
 \usepackage{amsmath}
 
 % ── Image base path ──────────────────────────────────────────
-\graphicspath{{"results/plots (3)/"}}
+\graphicspath{{results/plots_final/}}
 
 % ── Colours ──────────────────────────────────────────────────
 \definecolor{baseblue}{RGB}{70,130,180}
@@ -90,7 +90,8 @@
         \begin{tabular}{ll}
           \toprule
           Model        & Qwen3-0.6B-Base \\
-          Fine-tuning  & LoRA (r=8, $\alpha$=16) \\
+          SFT method   & DoRA (r=8, $\alpha$=16) \\
+          LoRA ablation & LoRA (r=8, $\alpha$=16) \\
           SFT steps    & 300 \\
           GRPO steps   & 200 \\
           Train data   & GSM8K (7\,473 ex.) \\
@@ -202,48 +203,71 @@ The two papers offer different interpretations of how reasoning ability emerges.
 \end{frame}
 % ════════════════════════════════════════════════════════════
 \section{Fine-tuning Method}
-\begin{frame}{SFT and GRPO}
+\begin{frame}{Fine-tuning Methods (1/2) — SFT}
 
-  \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \begin{block}{\badge{sftoran}{SFT} \ Supervised Fine-Tuning}
-        \begin{itemize}
-          \item Cross-entropy training on
-                (prompt, chain-of-thought) pairs
-          \item Labels masked on prompt tokens — only the
-                response contributes to the loss
-          \item Teaches the model \emph{what format} to use
-                and \emph{how to reason step-by-step}
-          \item Fast and stable; used as the starting point for GRPO
-        \end{itemize}
-      \end{block}
-    \end{column}
-
-    \begin{column}{0.48\textwidth}
-      \begin{block}{\badge{grpogre}{GRPO} \ Group Relative Policy Optimisation}
-        \begin{itemize}
-          \item Samples $G=8$ completions per prompt
-          \item Computes group-normalised advantages:
-                $\hat{A}_i = \frac{r_i - \bar{r}}{\sigma_r}$
-          \item Maximises a clipped surrogate objective
-                + KL penalty against the SFT reference model
-          \item \textbf{No value network} — much cheaper than PPO
-          \item Reward: correctness (1.0) + format bonus (0.5)
-        \end{itemize}
-      \end{block}
-    \end{column}
-  \end{columns}
+  \begin{block}{\badge{sftoran}{SFT} \ Supervised Fine-Tuning}
+    \begin{itemize}
+      \item Cross-entropy training on (prompt, chain-of-thought) pairs
+      \item Prompt tokens masked — only the \emph{response} contributes to the loss
+      \item Teaches the model \emph{what format} to use and \emph{how to reason step-by-step}
+      \item Fast and stable; used as the starting point for GRPO
+    \end{itemize}
+  \end{block}
 
   \vspace{0.8em}
   \begin{center}
     \begin{tikzpicture}[node distance=1.2cm,every node/.style={font=\small}]
       \node[draw,rounded corners,fill=baseblue!20,minimum width=2.4cm,minimum height=0.7cm] (base) {Base Model};
-      \node[draw,rounded corners,fill=sftoran!30,minimum width=2.4cm,minimum height=0.7cm,right=1.6cm of base] (sft) {SFT Model};
-      \node[draw,rounded corners,fill=grpogre!30,minimum width=2.4cm,minimum height=0.7cm,right=1.6cm of sft] (grpo) {GRPO Model};
+      \node[draw,rounded corners,fill=sftoran!30,minimum width=2.8cm,minimum height=0.7cm,right=1.6cm of base] (sft) {DoRA-SFT Model};
+      \node[draw,rounded corners,fill=grpogre!30,minimum width=2.8cm,minimum height=0.7cm,right=1.6cm of sft] (grpo) {GRPO Model};
       \draw[-{Stealth},thick] (base) -- node[above,font=\scriptsize]{300 steps} (sft);
       \draw[-{Stealth},thick] (sft)  -- node[above,font=\scriptsize]{200 RL steps} (grpo);
     \end{tikzpicture}
   \end{center}
+\end{frame}
+
+\begin{frame}{Fine-tuning Methods (2/2) — GRPO}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{block}{How GRPO works — step by step}
+        \small
+        \begin{enumerate}
+          \item Sample \textbf{$G=8$ completions} per prompt
+          \item Score each: correct $+1.0$, \texttt{\#\#\#\#} $+0.5$
+          \item Advantage = score relative to group mean:\\[1pt]
+                $\hat{A}_i = \frac{r_i - \bar{r}}{\sigma_r}$ \quad
+                \footnotesize(above mean $\to$ +, below $\to$ $-$)
+          \item \small Reinforce high-scorers, suppress low-scorers
+          \item KL penalty keeps model close to DoRA-SFT reference
+        \end{enumerate}
+      \end{block}
+    \end{column}
+
+    \begin{column}{0.44\textwidth}
+      \begin{block}{Why not PPO?}
+        \begin{itemize}\small
+          \item PPO needs a separate \textbf{value network} — doubles memory
+          \item GRPO uses the \textbf{group of 8 as its own baseline}
+          \item Cheaper; ideal for verifiable tasks (math, code)
+        \end{itemize}
+      \end{block}
+
+      \vspace{0.3em}
+      \begin{exampleblock}{Example (G=8 for one prompt)}
+        \footnotesize
+        \begin{tabular}{lc}
+          Completion & Reward \\
+          \hline
+          \texttt{\#\#\#\# 13} (correct) & 1.5 \\
+          \texttt{\#\#\#\# 16} (wrong)   & 0.5 \\
+          \texttt{answer is 13} & 1.0 \\
+          \texttt{I don't know} & 0.0 \\
+        \end{tabular}\\[2pt]
+        Mean $\approx$ 0.75 $\Rightarrow$ row 1 \& 3 boosted
+      \end{exampleblock}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
@@ -262,13 +286,13 @@ The two papers offer different interpretations of how reasoning ability emerges.
                     align=center,font=\normalsize,fill=grpogre!15,draw=grpogre!60}
     ]
     \node[bbase] (base) {\textbf{Qwen3-0.6B Base} \quad{\small pre-trained, no task knowledge}};
-    \node[bsft,below=1.0cm of base]  (sft)
-          {\textbf{SFT Model} --- LoRA adapter \quad{\small learns step-by-step reasoning}};
-    \node[bgrpo,below=1.0cm of sft]  (grpo)
-          {\textbf{GRPO Model} --- merged full model \quad{\small RL fine-tuning on top of SFT}};
+    \node[bsft,below=1.0cm of base] (sft)
+          {\textbf{DoRA-SFT Model} --- DoRA adapter \quad{\small learns step-by-step reasoning}};
+    \node[bgrpo,below=1.0cm of sft] (grpo)
+          {\textbf{GRPO Model} --- merged full model \quad{\small RL fine-tuning on top of DoRA-SFT}};
 
     \draw[arr] (base) -- node[right=8pt,font=\small]
-          {300 steps · fp16 · effective batch 32 · LoRA r=8} (sft);
+          {300 steps · fp16 · effective batch 32 · DoRA r=8} (sft);
     \draw[arr] (sft)  -- node[right=8pt,font=\small]
           {200 RL steps · G=8 completions · KL penalty $\beta=0.01$} (grpo);
 
@@ -279,59 +303,59 @@ The two papers offer different interpretations of how reasoning ability emerges.
 
 % ── Pipeline Slide 2: Evaluation ─────────────────────────────
 % ── Pipeline Slide 2: Evaluation ─────────────────────────────
-\begin{frame}{Pipeline (2/3) — Evaluation}
+\begin{frame}{Pipeline (2/4) — Evaluation: Model Loading}
 
   All \textbf{3 models} are evaluated on all \textbf{3 datasets} — 9 runs in total.
-  The evaluation script and prompts are identical across models;
-  only the loaded weights differ.
+  The evaluation script and prompts are identical; only the loaded weights differ.
 
   \vspace{0.8em}
+  \textbf{How each model is loaded}
+  \begin{itemize}
+    \item \textbf{Base} — load \texttt{Qwen3-0.6B-Base} directly
+    \item \textbf{DoRA-SFT} — load base, apply the DoRA adapter, merge weights
+    \item \textbf{LoRA-SFT} — same as above but with a plain LoRA adapter (ablation only)
+    \item \textbf{GRPO} — load the merged full model directly
+          (base + DoRA-SFT + GRPO all baked in; no adapter needed)
+  \end{itemize}
+
+  \vspace{0.8em}
+  \textbf{Metrics recorded per example}
+  \begin{itemize}
+    \item \textbf{Correct} — predicted answer matches gold label
+    \item \textbf{Format} — output contains \texttt{\#\#\#\# N}
+    \item \textbf{Eval score} — correctness ($+1.0$) + format bonus ($+0.5$)
+  \end{itemize}
+\end{frame}
+
+% ── Pipeline Slide 3: Evaluation grading ─────────────────────────────
+\begin{frame}{Pipeline (3/4) — Evaluation: Answer Grading}
+
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
-      \textbf{How each model is loaded}
-      \begin{itemize}
-        \item \textbf{Base} — load \texttt{Qwen3-0.6B-Base} directly
-        \item \textbf{SFT} — load base, then apply the LoRA adapter
-              and merge the weights before inference
-        \item \textbf{GRPO} — load the merged full model directly
-              (base + SFT + GRPO all baked in; no adapter needed)
-      \end{itemize}
-
-      \vspace{0.6em}
-      \textbf{Metrics recorded per example}
-      \begin{itemize}
-        \item \textbf{Correct} — predicted answer matches gold
-        \item \textbf{Format} — output contains \texttt{\#\#\#\# N}
-        \item \textbf{Reward} — correctness + format bonus
-      \end{itemize}
+      \begin{block}{GSM8K \& SVAMP (open-ended)}
+        \begin{itemize}
+          \item Generate up to 256 tokens (greedy)
+          \item Extract number: look for \texttt{\#\#\#\# N} first,
+                then ``Final answer: N'', then last number in text
+          \item Normalize (strip commas, drop \texttt{.0}) and compare
+        \end{itemize}
+      \end{block}
     \end{column}
 
     \begin{column}{0.48\textwidth}
-      \textbf{How answers are evaluated}
-
-      \medskip
-      \textit{GSM8K \& SVAMP (open-ended):}
-      \begin{itemize}\small
-        \item Generate up to 256 tokens (greedy)
-        \item Extract number: look for \texttt{\#\#\#\# N} first,
-              then ``Final answer: N'', then last number in text
-        \item Normalize both sides (strip commas, drop \texttt{.0})
-              and compare
-      \end{itemize}
-
-      \medskip
-      \textit{MMLU (multiple choice):}
-      \begin{itemize}\small
-        \item Generate only 16 tokens
-        \item Extract first A/B/C/D letter from output
-        \item Compare to the correct option letter
-      \end{itemize}
+      \begin{block}{MMLU (multiple choice)}
+        \begin{itemize}
+          \item Generate only 16 tokens
+          \item Extract first A/B/C/D letter from output
+          \item Compare to the correct option letter
+        \end{itemize}
+      \end{block}
     \end{column}
   \end{columns}
 \end{frame}
 % ── Pipeline Slide 3: Analysis ───────────────────────────────
 % ── Pipeline Slide 3: Analysis ───────────────────────────────
-\begin{frame}{Pipeline (3/3) — Analysis \& Outputs}
+\begin{frame}{Pipeline (4/4) — Analysis \& Outputs}
 
   After all evaluations are complete, \texttt{analyze.py} reads the
   results from all nine JSONL files and the training logs, then
@@ -353,7 +377,7 @@ The two papers offer different interpretations of how reasoning ability emerges.
         \item Accuracy and format rate for all three models on GSM8K
         \item Side-by-side GSM8K vs SVAMP accuracy comparison
         \item MMLU accuracy per subject to check for forgetting
-        \item Answer length and reward distributions
+        \item Answer length and composite score distributions
       \end{itemize}
     \end{column}
   \end{columns}
@@ -369,7 +393,7 @@ The two papers offer different interpretations of how reasoning ability emerges.
 \end{frame}
 % ════════════════════════════════════════════════════════════
 \section{Datasets}
-\begin{frame}{Datasets}
+\begin{frame}{Datasets (1/2) — Overview}
 
   \begin{columns}[T]
     \begin{column}{0.32\textwidth}
@@ -397,155 +421,257 @@ The two papers offer different interpretations of how reasoning ability emerges.
     \begin{column}{0.32\textwidth}
       \begin{block}{\badge{baseblue}{MMLU (subset)}}
         \begin{itemize}\small
-          \item 3 subjects, 150 each:
+          \item 2 subjects, 150 each (300 total):
             \begin{itemize}\scriptsize
               \item High School Mathematics
               \item Elementary Mathematics
-              \item World History
             \end{itemize}
           \item \textbf{Purpose}: catastrophic forgetting check
         \end{itemize}
       \end{block}
     \end{column}
   \end{columns}
+\end{frame}
 
-  \vspace{0.7em}
-  \begin{center}
-    \small\textit{Chain-of-thought prompt example (GSM8K):}
-    \medskip
+\begin{frame}{Datasets (2/2) — Examples}
 
-    \colorbox{lightgray}{\parbox{0.82\textwidth}{%
-      \texttt{Question: Janet has 16 eggs. She eats 3 for breakfast. How many does she sell?}\\
-      \texttt{Answer: Let's think step by step.}\\
-      \texttt{She has 16 - 3 = 13 eggs left.}\\
-      \texttt{{\color{grpogre}\#\#\#\# 13}}
-    }}
-  \end{center}
+  \begin{columns}[T]
+    \begin{column}{0.32\textwidth}
+      \badge{sftoran}{GSM8K}\\[4pt]
+      \colorbox{lightgray}{\parbox{\linewidth}{\footnotesize
+        \texttt{Q: Janet has 16 eggs. She eats}\\
+        \texttt{3 for breakfast. How many left?}\\[3pt]
+        \texttt{A: Let's think step by step.}\\
+        \texttt{16 - 3 = 13 eggs left.}\\
+        \texttt{{\color{grpogre}\#\#\#\# 13}}
+      }}
+      \vspace{0.4em}\\
+      \footnotesize Subtraction problem. Answer marked with \texttt{\#\#\#\#}. Used for training and in-distribution eval.
+    \end{column}
+
+    \begin{column}{0.32\textwidth}
+      \badge{grpogre}{SVAMP}\\[4pt]
+      \colorbox{lightgray}{\parbox{\linewidth}{\footnotesize
+        \texttt{Q: Janet has 16 eggs. She buys}\\
+        \texttt{3 more. How many does she have?}\\[3pt]
+        \texttt{A: Let's think step by step.}\\
+        \texttt{16 + 3 = 19 eggs.}\\
+        \texttt{{\color{grpogre}\#\#\#\# 19}}
+      }}
+      \vspace{0.4em}\\
+      \footnotesize Same numbers, different operation \& phrasing. Tests true understanding, not pattern-matching.
+    \end{column}
+
+    \begin{column}{0.32\textwidth}
+      \badge{baseblue}{MMLU}\\[4pt]
+      \colorbox{lightgray}{\parbox{\linewidth}{\footnotesize
+        \texttt{Q: What is the value of}\\
+        \texttt{$\log_2(8)$?}\\[3pt]
+        \texttt{(A) 2 \quad (B) 3}\\
+        \texttt{(C) 4 \quad (D) 6}\\[3pt]
+        \texttt{Answer: B}
+      }}
+      \vspace{0.4em}\\
+      \footnotesize Multiple-choice, no chain-of-thought. Only the letter (A/B/C/D) is extracted. Used to check for catastrophic forgetting.
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
 \section{Results}
-\begin{frame}{GSM8K Results — In-Distribution Math}
+\begin{frame}{GSM8K Results — In-Distribution Math (1/2)}
 
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
       \includegraphics[width=\linewidth]{accuracy_comparison.png}
     \end{column}
-
     \begin{column}{0.48\textwidth}
       \includegraphics[width=\linewidth]{format_rate_comparison.png}
     \end{column}
   \end{columns}
 
-  \vspace{0.4em}
-  \begin{center}
-    \small
-    \begin{tabular}{lccc}
-      \toprule
-      & Base & SFT & GRPO \\
-      \midrule
-      Accuracy   & 37.2\% & \textbf{51.6\%} & 49.2\% \\
-      Format rate & 0.0\% & 95.4\% & \textbf{96.0\%} \\
-      Avg reward  & 0.37  & 0.99   & 0.97   \\
-      \bottomrule
-    \end{tabular}
-    \quad
-    \begin{minipage}{0.42\textwidth}\small
-      SFT gives the biggest accuracy jump (+14 pp).\\
-      GRPO reinforces structured output format.
-    \end{minipage}
+  \vspace{0.6em}
+  \begin{center}\small
+  \begin{tabular}{lcccc}
+    \toprule
+    & Base & LoRA-SFT & DoRA-SFT & GRPO \\
+    \midrule
+    Accuracy    & 33.1\% & \textbf{52.0\%} & 51.7\% & 51.1\% \\
+    Format rate & 0.0\%  & 94.9\%          & 95.1\% & \textbf{95.7\%} \\
+    Eval score  & 0.33   & 0.99            & 0.99   & 0.99 \\
+    \bottomrule
+  \end{tabular}
   \end{center}
 \end{frame}
 
+\begin{frame}{GSM8K Results — In-Distribution Math (2/2)}
+  \begin{columns}[T]
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{darkgray}{Base — 33.1\%}}
+        \begin{itemize}\small
+          \item No GSM8K training
+          \item Freeform output — no \texttt{\#\#\#\#}
+          \item Answer extractor misses most correct calculations
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{sftoran}{SFT — 52.0\% (+18.9 pp)}}
+        \begin{itemize}\small
+          \item 7\,473 (question, CoT) pairs
+          \item Directly learns output format \& reasoning steps
+          \item Most targeted signal → biggest jump
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{grpogre}{GRPO — 51.1\% ($-0.6$ pp vs DoRA-SFT)}}
+        \begin{itemize}\small
+          \item Trained on top of the DoRA-SFT checkpoint
+          \item Only 200 noisy RL steps — marginal accuracy drop
+          \item Highest format rate (95.7\%) — RL optimises the reward signal
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
 % ════════════════════════════════════════════════════════════
-\begin{frame}{SVAMP Results — Generalisation}
+\begin{frame}{SVAMP Results — Out-of-Distribution Generalisation (1/2)}
 
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
       \includegraphics[width=\linewidth]{svamp_accuracy.png}
     \end{column}
-
     \begin{column}{0.48\textwidth}
       \includegraphics[width=\linewidth]{gsm8k_vs_svamp.png}
     \end{column}
   \end{columns}
 
-  \vspace{0.4em}
+  \vspace{0.6em}
   \begin{center}\small
-    \begin{tabular}{lccc}
-      \toprule
-      & Base & SFT & GRPO \\
-      \midrule
-      Accuracy & 71.4\% & 62.2\% & 61.8\% \\
-      Format   & 0.0\%  & 99.6\% & 99.8\% \\
-      \bottomrule
-    \end{tabular}
-    \quad
-    \begin{minipage}{0.42\textwidth}\small
-      Base already solves SVAMP well.\\
-      Fine-tuning causes mild over-specialisation ($-9$ pp)\\
-      but SFT and GRPO are nearly identical.
-    \end{minipage}
+  \begin{tabular}{lcccc}
+    \toprule
+    & Base & LoRA-SFT & DoRA-SFT & GRPO \\
+    \midrule
+    SVAMP Acc. & \textbf{68.3\%} & 61.1\% & 59.1\% & 61.1\% \\
+    \bottomrule
+  \end{tabular}
   \end{center}
 \end{frame}
 
-% ════════════════════════════════════════════════════════════
-\begin{frame}{MMLU Results — Catastrophic Forgetting Check}
-
+\begin{frame}{SVAMP Results — Out-of-Distribution Generalisation (2/2)}
   \begin{columns}[T]
-    \begin{column}{0.56\textwidth}
-      \includegraphics[width=\linewidth]{mmlu_forgetting.png}
-    \end{column}
-
-    \begin{column}{0.41\textwidth}
-      \begin{block}{Key Takeaways}
-        \begin{itemize}
-          \item All models score $\sim$9\% — below random chance (25\%)
-          \item \textbf{Not forgetting} — the base model is also $\sim$9\%
-          \item 0.6B parameters is too small for 4-choice academic MCQ
-          \item \textbf{No measurable degradation} from fine-tuning
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{darkgray}{Base — 68.3\% (highest)}}
+        \begin{itemize}\small
+          \item Never trained on any fixed format
+          \item Handles varied phrasing flexibly
+          \item Nothing to ``unlearn'' → best OOD score
         \end{itemize}
       \end{block}
-
-      \vspace{0.5em}
-      \begin{center}
-        \small
-        \begin{tabular}{lcc}
-          \toprule
-          Model & Overall & $\Delta$ vs Base \\
-          \midrule
-          Base  & 8.7\%  & — \\
-          SFT   & 8.7\%  & 0.0 pp \\
-          GRPO  & 9.0\%  & +0.3 pp \\
-          \bottomrule
-        \end{tabular}
-      \end{center}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{sftoran}{SFT — 59--61\% ($-7$ to $-9$ pp)}}
+        \begin{itemize}\small
+          \item GSM8K training biases toward one question style
+          \item SVAMP phrasing breaks that expectation
+          \item Classic \emph{in-distribution overfit}
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{grpogre}{GRPO — 61.1\% ($+2$ pp)}}
+        \begin{itemize}\small
+          \item Reward checks the \emph{output answer}, not the \emph{input phrasing}
+          \item Model is not penalised for varied question wording
+          \item Partially recovers the OOD drop
+        \end{itemize}
+      \end{block}
     \end{column}
   \end{columns}
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
-\begin{frame}{SFT Training Curve}
+\begin{frame}{MMLU Results — Catastrophic Forgetting Check (1/2)}
 
   \begin{columns}[T]
     \begin{column}{0.62\textwidth}
-      \includegraphics[width=\linewidth]{sft_training_curve.png}
+      \includegraphics[width=\linewidth]{mmlu_forgetting.png}
     \end{column}
-
     \begin{column}{0.35\textwidth}
-      \begin{block}{SFT Details}
-        \begin{itemize}
-          \item 300 optimiser steps
-          \item Batch size 2, grad accum 16\\
-                (effective batch = 32)
-          \item fp16 mixed precision
-          \item Gradient checkpointing
-          \item Loss decreases steadily,\\
-                confirming stable training
+      \small
+      \begin{tabular}{lcc}
+        \toprule
+        Model & Overall & $\Delta$ \\
+        \midrule
+        Base  & 8.7\%  & — \\
+        SFT   & 9.0\%  & +0.3 pp \\
+        GRPO  & 9.7\%  & +1.0 pp \\
+        \bottomrule
+      \end{tabular}
+      \vspace{0.5em}
+      \begin{itemize}\small
+        \item All models score $\sim$8.7--9.7\%
+        \item \textbf{Below random chance} (25\%)
+        \item SFT score unchanged from Base — \textbf{no forgetting}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{MMLU Results — Catastrophic Forgetting Check (2/2)}
+  \begin{columns}[T]
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{darkgray}{Why $\sim$9\% across the board}}
+        \begin{itemize}\small
+          \item MMLU requires broad academic knowledge
+          \item 0.6B parameters lacks the capacity
+          \item \textbf{Model-size ceiling}, not a training issue
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{sftoran}{Why SFT does not hurt}}
+        \begin{itemize}\small
+          \item LoRA only updates low-rank adapters
+          \item Original pre-trained weights stay frozen
+          \item Arithmetic skill added, nothing erased
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\textcolor{grpogre}{Why GRPO gains $+1.0$ pp}}
+        \begin{itemize}\small
+          \item Reward requires correct \emph{and} formatted output
+          \item Model reuses SFT's structured reasoning style to earn reward
+          \item Transfers to Elementary Math (13.3\%$\to$16.0\%) and overall (8.7\%$\to$9.7\%)
         \end{itemize}
       \end{block}
     \end{column}
   \end{columns}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════
+\begin{frame}{SFT Training Curves}
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \centering\small\textbf{DoRA-SFT}\\[2pt]
+      \includegraphics[width=\linewidth]{dora_sft_training_curve.png}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \centering\small\textbf{LoRA-SFT}\\[2pt]
+      \includegraphics[width=\linewidth]{lora_sft_training_curve.png}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.4em}
+  \begin{block}{SFT Details}
+    \small 300 optimiser steps · Batch size 2, grad accum 16 (effective batch = 32) ·
+    fp16 mixed precision · Gradient checkpointing · Loss decreases steadily for both variants.
+  \end{block}
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
@@ -557,7 +683,7 @@ The two papers offer different interpretations of how reasoning ability emerges.
     \end{column}
 
     \begin{column}{0.35\textwidth}
-      \begin{block}{Reward Design}
+      \begin{block}{RL Training Reward}
         \small
         \begin{tabular}{lc}
           \toprule
@@ -569,43 +695,54 @@ The two papers offer different interpretations of how reasoning ability emerges.
           Neither        & 0.0 \\
           \bottomrule
         \end{tabular}
+        \vspace{0.2em}\\
+        \footnotesize Used \emph{only} during GRPO training to update the policy.
       \end{block}
 
       \vspace{0.5em}
       \begin{itemize}\small
-        \item Mean reward rises \textbf{0.86 → 1.06}
-        \item High variance is normal in GRPO —
+        \item Mean training reward rises \textbf{0.66 → 0.96}
+        \item High variance is normal —
               group sampling is noisy
         \item KL divergence stays small —
-              model stays close to SFT reference
+              model stays close to DoRA-SFT reference
       \end{itemize}
     \end{column}
   \end{columns}
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
-\begin{frame}{Answer Length Distribution}
+\begin{frame}{Composite Eval Score Distribution}
 
-  \begin{center}
-    \includegraphics[width=0.82\linewidth]{answer_length_distribution.png}
-  \end{center}
+  \begin{columns}[T]
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=\linewidth]{reward_distribution.png}
+    \end{column}
+    \begin{column}{0.39\textwidth}
+      \small\textbf{Composite eval score:} $+1.0$ if correct $+\,0.5$ if \texttt{\#\#\#\#} (max 1.5)\\[3pt]
+      \footnotesize Same formula as the GRPO training reward, but applied post-hoc at inference to \emph{all} models — not a training signal for Base or SFT.
 
-  \vspace{0.2em}
-  \begin{center}\small
-    Correct answers tend to be longer — more reasoning steps lead to the right answer.
-  \end{center}
-\end{frame}
+      \vspace{0.5em}
+      \textcolor{darkgray}{\textbf{Base — peak at 0}}
+      \begin{itemize}\footnotesize
+        \item No \texttt{\#\#\#\#} convention learned
+        \item Most outputs wrong \emph{and} unformatted
+      \end{itemize}
 
-\begin{frame}{Reward Distribution}
+      \textcolor{sftoran}{\textbf{DoRA-SFT — peak near 1.0}}
+      \begin{itemize}\footnotesize
+        \item Learns correct answers \emph{and} format together
+        \item Distribution shifts sharply rightward
+      \end{itemize}
 
-  \begin{center}
-    \includegraphics[width=0.65\linewidth]{reward_distribution.png}
-  \end{center}
-
-  \vspace{0.2em}
-  \begin{center}\small
-    SFT and GRPO shift the reward distribution clearly rightward compared to the base model.
-  \end{center}
+      \textcolor{grpogre}{\textbf{GRPO — similar to DoRA-SFT}}
+      \begin{itemize}\footnotesize
+        \item Starts from DoRA-SFT checkpoint
+        \item RL training used same formula as reward signal
+        \item Pushes slightly more answers to max score (1.5)
+      \end{itemize}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % ════════════════════════════════════════════════════════════
@@ -638,7 +775,7 @@ The two papers offer different interpretations of how reasoning ability emerges.
 \end{frame}
 
 % ── Prompt Design ─────────────────────────────────────────
-\begin{frame}{Experiment 1 — Prompt Design Comparison}
+\begin{frame}{Experiment 1 — Prompt Design Comparison (1/2)}
 
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
@@ -655,7 +792,7 @@ The two papers offer different interpretations of how reasoning ability emerges.
       \vspace{0.6em}
       \textbf{Why it matters}
       \begin{itemize}\small
-        \item Prompt design is listed as a key decision
+        \item Prompt design is a key practical decision
         \item Same model weights — only the prompt changes
         \item Tests whether explicit instructions help a small model
       \end{itemize}
@@ -681,15 +818,55 @@ The two papers offer different interpretations of how reasoning ability emerges.
         Question: Janet has 16 eggs...\\
         Answer: Let's solve step by step.}
       \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Experiment 1 — Prompt Design Comparison (2/2)}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \includegraphics[width=\linewidth]{prompt_comparison.png}
 
       \vspace{0.3em}
-      \includegraphics[width=\linewidth]{prompt_comparison.png}
+      \small
+      \begin{tabular}{lcc}
+        \toprule
+        Strategy & Base & SFT \\
+        \midrule
+        \badge{baseblue}{direct} & 4.0\%  & 49.5\% \\
+        \badge{sftoran}{cot}     & \textbf{47.0\%} & \textbf{50.0\%} \\
+        \badge{grpogre}{rules}   & 41.0\% & 48.5\% \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+
+    \begin{column}{0.44\textwidth}
+      \textbf{Key findings}
+
+      \textcolor{baseblue}{\textbf{Direct (base) — 4\%}}
+      \begin{itemize}\footnotesize
+        \item No guidance → no reasoning signal
+        \item Model outputs random text, rarely correct
+      \end{itemize}
+
+      \textcolor{sftoran}{\textbf{CoT — best for base (+43 pp)}}
+      \begin{itemize}\footnotesize
+        \item Activates pre-trained chain-of-thought knowledge
+        \item Biggest boost for an untuned model
+      \end{itemize}
+
+      \textcolor{grpogre}{\textbf{Rules — diminishing returns}}
+      \begin{itemize}\footnotesize
+        \item Explicit rules add noise, not clarity
+        \item After SFT, all prompts converge ($\sim$49--50\%)
+        \item SFT already internalised the reasoning format
+      \end{itemize}
     \end{column}
   \end{columns}
 \end{frame}
 
 % ── DoRA vs LoRA ──────────────────────────────────────────
-\begin{frame}{Experiment 2 — DoRA vs LoRA}
+\begin{frame}{Experiment 2 — DoRA vs LoRA (1/2)}
 
   \begin{columns}[T]
     \begin{column}{0.52\textwidth}
@@ -702,8 +879,9 @@ The two papers offer different interpretations of how reasoning ability emerges.
           \item Inspired by Weight Normalization (Salimans \& Kingma, 2016)
         \end{itemize}
       \end{block}
+    \end{column}
 
-      \vspace{0.5em}
+    \begin{column}{0.45\textwidth}
       \begin{block}{Experimental Setup}
         \small
         \begin{tabular}{ll}
@@ -719,83 +897,147 @@ The two papers offer different interpretations of how reasoning ability emerges.
           \bottomrule
         \end{tabular}
 
-        \vspace{0.3em}
-        \textit{Identical hyperparameters — only \texttt{use\_dora} differs.}
+        \vspace{0.4em}
+        \textit{Identical hyperparameters — only \texttt{use\_dora} flag differs.}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Experiment 2 — DoRA vs LoRA (2/2)}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{block}{Results}
+        \begin{center}
+        \begin{tabular}{lccc}
+          \toprule
+          Method & GSM8K & Format & SVAMP \\
+          \midrule
+          LoRA (SFT)  & \textbf{52.0\%} & 94.9\% & \textbf{61.1\%} \\
+          DoRA (SFT)  & 51.7\%          & \textbf{95.1\%} & 59.1\% \\
+          \bottomrule
+        \end{tabular}
+        \end{center}
+      \end{block}
+
+      \vspace{0.5em}
+      \begin{block}{Why the gap is so small}
+        \small
+        DoRA's extra magnitude scalar $m$ is most beneficial when
+        the adaptation requires both scaling \emph{and} rotating
+        the weight matrix. For a simple task like grade-school
+        arithmetic at rank $r=8$, the direction update alone
+        in standard LoRA is already sufficient.
       \end{block}
     \end{column}
 
     \begin{column}{0.45\textwidth}
-      \begin{block}{GSM8K Results}
-        \begin{center}
-        \begin{tabular}{lcc}
-          \toprule
-          Method & Accuracy & Format \\
-          \midrule
-          LoRA (SFT)  & \textbf{51.6\%} & 95.4\% \\
-          DoRA (SFT)  & \textit{TBD}    & \textit{TBD} \\
-          \bottomrule
-        \end{tabular}
-        \end{center}
-        \small\textit{(Fill in after running on Kaggle)}
+      \begin{block}{Interpretation}
+        \small
+        \textbf{Why LoRA matches DoRA:}
+        \begin{itemize}
+          \item GSM8K requires learning a narrow skill
+                (arithmetic + output format) — low intrinsic rank
+          \item At 0.6B scale the weight matrices are small;
+                the magnitude dimension adds little expressive power
+          \item 300 steps may not be enough to utilise
+                DoRA's extra degree of freedom
+        \end{itemize}
       \end{block}
 
       \vspace{0.5em}
-      \begin{block}{Key Question}
-        Does the magnitude--direction decomposition in DoRA
-        help a 0.6B model learn math reasoning better than
-        standard LoRA?
+      \begin{block}{Takeaway}
+        \small
+        For sub-1B models on narrow tasks, standard LoRA
+        is sufficient. DoRA's benefit is more likely to
+        appear at larger scale or higher rank.
       \end{block}
     \end{column}
   \end{columns}
 \end{frame}
 
 % ── Reasoning Validity ────────────────────────────────────
-\begin{frame}{Experiment 3 — Step-by-Step Reasoning Validity}
+\begin{frame}{Experiment 3 — Step-by-Step Reasoning Validity (1/2)}
 
   \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \textbf{Motivation}\\
+    \begin{column}{0.52\textwidth}
+      \textbf{Motivation}\\[4pt]
       Final-answer accuracy only tells us \emph{what} the model got right,
       not \emph{how}. A model could reach the right answer through
       wrong intermediate steps (lucky cancellation).
 
-      \vspace{0.6em}
+      \vspace{0.7em}
       \textbf{Method}
       \begin{itemize}\small
         \item Extract every arithmetic expression from the completion\\
               e.g.\ \texttt{16 - 3 = 13}, \texttt{5 * 4 = 20}
-        \item Verify each calculation independently
-        \item Classify completions into four quadrants:
+        \item Verify each calculation independently with Python
+        \item Classify each completion into a 2$\times$2 quadrant:
       \end{itemize}
 
-      \vspace{0.4em}
-      \footnotesize
+      \vspace{0.5em}
+      \small
       \begin{tabular}{l|cc}
         & Correct answer & Wrong answer \\
         \hline
-        Valid reasoning  & \textcolor{grpogre}{\textbf{Best}} & Unlucky \\
-        Invalid reasoning & Lucky   & \textcolor{red}{\textbf{Worst}} \\
+        Valid reasoning   & \textcolor{grpogre}{\textbf{Best}}  & Unlucky \\
+        Invalid reasoning & Lucky                                & \textcolor{red}{\textbf{Worst}} \\
       \end{tabular}
     \end{column}
 
-    \begin{column}{0.48\textwidth}
+    \begin{column}{0.44\textwidth}
       \begin{block}{Metrics}
         \begin{itemize}\small
-          \item \textbf{Step accuracy}: fraction of arithmetic steps
-                that are mathematically correct
-          \item \textbf{Reasoning validity rate}: fraction of completions
-                where \emph{all} extracted steps are correct
+          \item \textbf{Step accuracy}: fraction of arithmetic
+                steps that are mathematically correct
+          \item \textbf{Reasoning validity rate}: fraction of
+                completions where \emph{all} steps are correct
           \item \textbf{Avg steps}: reasoning depth per completion
         \end{itemize}
       \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
 
-      \vspace{0.4em}
-      \includegraphics[width=\linewidth]{reasoning_validity.png}
+\begin{frame}{Experiment 3 — Step-by-Step Reasoning Validity (2/2)}
+
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \includegraphics[width=\linewidth]{reasoning_comparison.png}
 
       \vspace{0.3em}
-      \begin{center}\small
-        \textit{Compares Base vs SFT vs GRPO reasoning quality}
-      \end{center}
+      \small
+      \begin{tabular}{lccc}
+        \toprule
+        & Base & SFT & GRPO \\
+        \midrule
+        Step accuracy  & 85.0\% & 90.4\% & \textbf{90.6\%} \\
+        Validity rate  & \textbf{78.3\%} & 60.8\% & 63.3\% \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+
+    \begin{column}{0.46\textwidth}
+      \textcolor{darkgray}{\textbf{Base — highest validity (78.3\%)}}
+      \begin{itemize}\small
+        \item Short, simple responses
+        \item Fewer steps → fewer chances to err
+        \item High validity despite low final accuracy
+      \end{itemize}
+
+      \textcolor{sftoran}{\textbf{SFT — lower validity (60.8\%)}}
+      \begin{itemize}\small
+        \item Longer, detailed reasoning chains
+        \item More steps → more arithmetic opportunities for error
+      \end{itemize}
+
+      \textcolor{grpogre}{\textbf{GRPO — slight recovery (63.3\%)}}
+      \begin{itemize}\small
+        \item Reward penalises wrong answers
+        \item Indirectly encourages more careful arithmetic
+        \item Step accuracy up +0.2 pp vs SFT
+      \end{itemize}
     \end{column}
   \end{columns}
 \end{frame}
@@ -809,12 +1051,12 @@ The two papers offer different interpretations of how reasoning ability emerges.
       \begin{block}{What We Achieved}
         \begin{itemize}
           \item Fine-tuned Qwen3-0.6B on 2×T4 GPUs
-          \item \textbf{SFT}: +14 pp on GSM8K, 95\% format adoption
-          \item \textbf{GRPO}: reward rises +24\%, format improves further
+          \item \textbf{SFT}: +18.9 pp on GSM8K, 95\% format adoption
+          \item \textbf{GRPO}: reward rises 0.66→0.96, format improves further
           \item \textbf{No catastrophic forgetting} on MMLU
-          \item \textbf{Prompt comparison}: CoT vs direct vs rules
-          \item \textbf{DoRA vs LoRA}: same setup, method comparison
-          \item \textbf{Reasoning validity}: verified arithmetic steps
+          \item \textbf{Prompt comparison}: CoT dominates for base (+43 pp)
+          \item \textbf{DoRA vs LoRA}: nearly identical ($<0.5$ pp)
+          \item \textbf{Reasoning validity}: SFT/GRPO improve step accuracy (+5.5 pp)
         \end{itemize}
       \end{block}
     \end{column}
@@ -822,8 +1064,8 @@ The two papers offer different interpretations of how reasoning ability emerges.
     \begin{column}{0.48\textwidth}
       \begin{block}{Limitations \& Future Work}
         \begin{itemize}
-          \item GRPO slightly below SFT ($-$2.4 pp): more RL steps needed
-          \item SVAMP drop: format over-specialisation on GSM8K style
+          \item GRPO slightly below DoRA-SFT ($-$0.6 pp): more RL steps needed
+          \item SVAMP drop ($-$9 pp): format over-specialisation on GSM8K style
           \item MMLU: 0.6B too small; 3B+ needed for meaningful scores
           \item \textbf{Next steps}:
             \begin{itemize}\small
@@ -842,17 +1084,21 @@ The two papers offer different interpretations of how reasoning ability emerges.
 
 \begin{frame}{Summary}
     \begin{center}
-    \begin{tabular}{lcccc}
+    \begin{tabular}{lccccc}
       \toprule
       & \multicolumn{2}{c}{GSM8K} & SVAMP & MMLU \\
       \cmidrule(lr){2-3}
       Model & Acc. & Format & Acc. & Acc. \\
       \midrule
-      Base  & 37.2\% & 0.0\%  & 71.4\% & 8.7\% \\
-      SFT   & \textbf{51.6\%} & 95.4\% & \textbf{62.2\% }& 8.7\% \\
-      GRPO  & 49.2\% & \textbf{96.0\%} & 61.8\% & \textbf{9.0\%} \\
+      Base       & 33.1\% & 0.0\%           & \textbf{68.3\%} & 8.7\%  \\
+      LoRA-SFT   & \textbf{52.0\%} & 94.9\% & 61.1\%         & —      \\
+      DoRA-SFT   & 51.7\% & 95.1\%          & 59.1\%          & 9.0\%  \\
+      GRPO       & 51.1\% & \textbf{95.7\%} & 61.1\%          & \textbf{9.7\%} \\
       \bottomrule
     \end{tabular}
+    \vspace{0.4em}\\
+    \small\textit{LoRA-SFT and DoRA-SFT differ by $<0.5$ pp on GSM8K.
+    GRPO closes the SVAMP gap vs DoRA-SFT.}
   \end{center}
 \end{frame}
 % ════════════════════════════════════════════════════════════
